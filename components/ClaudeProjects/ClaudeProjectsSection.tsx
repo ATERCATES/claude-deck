@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
-import { useClaudeProjectsQuery } from "@/data/claude";
+import { useClaudeProjectsQuery, useClaudeUpdates } from "@/data/claude";
 import { ClaudeProjectCard } from "./ClaudeProjectCard";
 
 interface ClaudeProjectsSectionProps {
@@ -29,6 +29,7 @@ export function ClaudeProjectsSection({
   onSelectSession,
   onNewSession,
 }: ClaudeProjectsSectionProps) {
+  useClaudeUpdates();
   const { data: projects = [], isPending } = useClaudeProjectsQuery();
   const [showHidden, setShowHidden] = useState(false);
 

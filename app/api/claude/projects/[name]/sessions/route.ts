@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessions } from "@/lib/claude/jsonl-reader";
+import { getCachedSessions } from "@/lib/claude/jsonl-cache";
 import { queries } from "@/lib/db";
 import fs from "fs";
 import path from "path";
@@ -25,12 +25,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const offset = parseInt(searchParams.get("offset") || "0", 10);
     const includeHidden = searchParams.get("includeHidden") === "true";
 
-    const { sessions, total } = await getSessions(name, limit + 50, 0);
+    const allSessions = await getCachedSessions(name);
 
     const hiddenItems = await queries.getHiddenItems("session");
     const hiddenSet = new Set(hiddenItems.map((h) => h.item_id));
 
-    const enriched = sessions.map((s) => ({
+    const enriched = allSessions.map((s) => ({
       ...s,
       cwd: resolveValidCwd(s.cwd),
       hidden: hiddenSet.has(s.sessionId),

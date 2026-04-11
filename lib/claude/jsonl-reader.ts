@@ -142,35 +142,23 @@ export async function extractProjectDirectory(
 ): Promise<string | null> {
   const projectDir = getProjectDir(projectName);
   const files = getJsonlFiles(projectDir);
-  const cwdCounts = new Map<string, number>();
-  let latestCwd: string | null = null;
-  let latestTimestamp = 0;
 
-  for (const file of files.slice(0, 5)) {
-    const entries = await readJsonlFile(file);
-    for (const entry of entries) {
-      if (!entry.cwd) continue;
-      cwdCounts.set(entry.cwd, (cwdCounts.get(entry.cwd) || 0) + 1);
-      const ts = new Date(entry.timestamp || 0).getTime();
-      if (ts > latestTimestamp) {
-        latestTimestamp = ts;
-        latestCwd = entry.cwd;
-      }
+  for (const file of files.slice(0, 3)) {
+    const stream = fs.createReadStream(file);
+    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if (entry.cwd) {
+          rl.close();
+          stream.destroy();
+          return entry.cwd;
+        }
+      } catch {}
     }
   }
-
-  if (cwdCounts.size === 0) return null;
-
-  let maxCount = 0;
-  let mostCommonCwd: string | null = null;
-  for (const [cwd, count] of cwdCounts) {
-    if (count > maxCount) {
-      maxCount = count;
-      mostCommonCwd = cwd;
-    }
-  }
-
-  return mostCommonCwd || latestCwd;
+  return null;
 }
 
 export async function getSessions(

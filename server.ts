@@ -4,6 +4,7 @@ import next from "next";
 import { WebSocketServer, WebSocket } from "ws";
 import * as pty from "node-pty";
 import { initDb } from "./lib/db";
+import { startWatcher, addUpdateClient } from "./lib/claude/watcher";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "0.0.0.0";
@@ -28,10 +29,9 @@ app.prepare().then(async () => {
     }
   });
 
-  // Terminal WebSocket server
   const terminalWss = new WebSocketServer({ noServer: true });
+  const updatesWss = new WebSocketServer({ noServer: true });
 
-  // Handle WebSocket upgrades
   server.on("upgrade", (request, socket, head) => {
     const { pathname } = parse(request.url || "");
 
@@ -39,8 +39,11 @@ app.prepare().then(async () => {
       terminalWss.handleUpgrade(request, socket, head, (ws) => {
         terminalWss.emit("connection", ws, request);
       });
+    } else if (pathname === "/ws/updates") {
+      updatesWss.handleUpgrade(request, socket, head, (ws) => {
+        addUpdateClient(ws);
+      });
     }
-    // Let HMR and other WebSocket connections pass through to Next.js
   });
 
   // Terminal connections
@@ -120,6 +123,8 @@ app.prepare().then(async () => {
 
   await initDb();
   console.log("> Database initialized");
+
+  startWatcher();
 
   server.listen(port, () => {
     console.log(`> Agent-OS ready on http://${hostname}:${port}`);

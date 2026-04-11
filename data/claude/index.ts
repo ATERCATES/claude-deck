@@ -6,3 +6,4 @@ export {
   useUnhideItem,
 } from "./queries";
 export type { ClaudeProject, ClaudeSession } from "./queries";
+export { useClaudeUpdates } from "./useClaudeUpdates";

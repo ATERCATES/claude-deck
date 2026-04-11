@@ -17,6 +17,7 @@ export interface JsonlEntry {
   parentUuid?: string | null;
   leafUuid?: string;
   summary?: string;
+  customTitle?: string;
   cwd?: string;
   isApiErrorMessage?: boolean;
   toolUseResult?: {
@@ -195,7 +196,9 @@ export async function getSessions(
 
       if (!existing) {
         let summary = "";
-        if (entry.summary) {
+        if (entry.customTitle) {
+          summary = entry.customTitle;
+        } else if (entry.summary) {
           summary = entry.summary;
         } else if (entry.message?.role === "user" && entry.message.content) {
           summary = extractUserText(entry.message.content) || "";
@@ -214,10 +217,11 @@ export async function getSessions(
         if (!existing.cwd && entry.cwd) {
           existing.cwd = entry.cwd;
         }
-        if (!existing.summary && entry.summary) {
+        if (entry.customTitle) {
+          existing.summary = entry.customTitle;
+        } else if (!existing.summary && entry.summary) {
           existing.summary = entry.summary;
-        }
-        if (
+        } else if (
           !existing.summary &&
           entry.message?.role === "user" &&
           entry.message.content

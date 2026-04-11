@@ -32,7 +32,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const devServer = addProjectDevServer(id, {
+    const devServer = await addProjectDevServer(id, {
       name,
       type,
       command,

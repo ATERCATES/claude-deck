@@ -8,7 +8,7 @@ import {
 // GET /api/projects - List all projects with dev server configs
 export async function GET() {
   try {
-    const projects = getAllProjectsWithDevServers();
+    const projects = await getAllProjectsWithDevServers();
     return NextResponse.json({ projects });
   } catch (error) {
     console.error("Error getting projects:", error);
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const project = createProject({
+    const project = await createProject({
       name,
       workingDirectory,
       agentType,

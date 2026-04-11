@@ -57,7 +57,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const repository = addProjectRepository(id, {
+    const repository = await addProjectRepository(id, {
       name,
       path,
       isPrimary,

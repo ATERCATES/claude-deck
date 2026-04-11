@@ -3,6 +3,7 @@ import { parse } from "url";
 import next from "next";
 import { WebSocketServer, WebSocket } from "ws";
 import * as pty from "node-pty";
+import { initDb } from "./lib/db";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "0.0.0.0";
@@ -15,7 +16,7 @@ const port = parseInt(portArg || process.env.PORT || "3011", 10);
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
   const server = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url!, true);
@@ -116,6 +117,9 @@ app.prepare().then(() => {
       ptyProcess.kill();
     });
   });
+
+  await initDb();
+  console.log("> Database initialized");
 
   server.listen(port, () => {
     console.log(`> Agent-OS ready on http://${hostname}:${port}`);

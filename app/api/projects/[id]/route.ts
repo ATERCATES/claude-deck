@@ -14,7 +14,7 @@ interface RouteParams {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
-    const project = getProjectWithDevServers(id);
+    const project = await getProjectWithDevServers(id);
 
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -46,7 +46,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     // Handle expanded toggle separately
     if (typeof expanded === "boolean") {
-      toggleProjectExpanded(id, expanded);
+      await toggleProjectExpanded(id, expanded);
     }
 
     // Update other fields if provided
@@ -57,7 +57,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       defaultModel ||
       initialPrompt !== undefined
     ) {
-      const project = updateProject(id, {
+      const project = await updateProject(id, {
         name,
         working_directory: workingDirectory,
         agent_type: agentType,
@@ -73,7 +73,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const updated = getProjectWithDevServers(id);
+    const updated = await getProjectWithDevServers(id);
     return NextResponse.json({ project: updated });
   } catch (error) {
     console.error("Error updating project:", error);
@@ -88,7 +88,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
-    const deleted = deleteProject(id);
+    const deleted = await deleteProject(id);
 
     if (!deleted) {
       return NextResponse.json(

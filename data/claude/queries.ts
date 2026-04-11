@@ -15,6 +15,7 @@ export interface ClaudeSession {
   summary: string;
   lastActivity: string;
   messageCount: number;
+  cwd: string | null;
   hidden: boolean;
 }
 

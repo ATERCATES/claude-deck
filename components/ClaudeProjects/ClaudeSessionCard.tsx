@@ -13,7 +13,6 @@ import type { ClaudeSession } from "@/data/claude";
 
 interface ClaudeSessionCardProps {
   session: ClaudeSession;
-  projectDirectory: string | null;
   onHide: () => void;
   onUnhide: () => void;
   onSelect?: (sessionId: string, directory: string) => void;
@@ -39,14 +38,13 @@ function getTimeAgo(dateStr: string): string {
 
 export function ClaudeSessionCard({
   session,
-  projectDirectory,
   onHide,
   onUnhide,
   onSelect,
 }: ClaudeSessionCardProps) {
   const handleClick = () => {
-    if (onSelect && projectDirectory) {
-      onSelect(session.sessionId, projectDirectory);
+    if (onSelect && session.cwd) {
+      onSelect(session.sessionId, session.cwd);
     }
   };
 

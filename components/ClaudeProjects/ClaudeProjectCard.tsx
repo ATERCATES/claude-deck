@@ -143,7 +143,6 @@ export function ClaudeProjectCard({
               <ClaudeSessionCard
                 key={session.sessionId}
                 session={session}
-                projectDirectory={project.directory}
                 onSelect={onSelectSession}
                 onHide={() =>
                   hideItem.mutate({

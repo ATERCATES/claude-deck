@@ -40,6 +40,7 @@ export interface SessionInfo {
   summary: string;
   lastActivity: string;
   messageCount: number;
+  cwd: string | null;
 }
 
 export interface SessionMessage {
@@ -180,7 +181,7 @@ export async function getSessions(
   const files = getJsonlFiles(projectDir);
   const sessionMap = new Map<
     string,
-    { summary: string; lastActivity: string; messageCount: number }
+    { summary: string; lastActivity: string; messageCount: number; cwd: string | null }
   >();
 
   for (const file of files) {
@@ -203,11 +204,15 @@ export async function getSessions(
           summary,
           lastActivity: ts,
           messageCount: 1,
+          cwd: entry.cwd || null,
         });
       } else {
         existing.messageCount++;
         if (ts > existing.lastActivity) {
           existing.lastActivity = ts;
+        }
+        if (!existing.cwd && entry.cwd) {
+          existing.cwd = entry.cwd;
         }
         if (!existing.summary && entry.summary) {
           existing.summary = entry.summary;

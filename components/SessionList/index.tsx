@@ -8,6 +8,7 @@ import {
   NewProjectDialog,
   ProjectSettingsDialog,
 } from "@/components/Projects";
+import { ClaudeProjectsSection } from "@/components/ClaudeProjects";
 import { FolderPicker } from "@/components/FolderPicker";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { SessionListHeader } from "./SessionListHeader";
@@ -267,6 +268,14 @@ export function SessionList({
               }
               onHoverEnd={hoverHandlers.onHoverEnd}
             />
+          )}
+
+          {/* Claude discovered projects */}
+          {!isInitialLoading && !hasError && (
+            <>
+              <div className="border-border my-2 border-t" />
+              <ClaudeProjectsSection />
+            </>
           )}
 
           {/* Content - Group view (fallback when no projects) */}

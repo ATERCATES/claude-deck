@@ -32,20 +32,22 @@ function handleFileChange(filePath: string): void {
   const existing = debounceTimers.get(projectName);
   if (existing) clearTimeout(existing);
 
-  debounceTimers.set(projectName, setTimeout(() => {
-    debounceTimers.delete(projectName);
-    invalidateProject(projectName);
-    broadcast({ type: "project-updated", projectName });
-  }, 500));
+  debounceTimers.set(
+    projectName,
+    setTimeout(() => {
+      debounceTimers.delete(projectName);
+      invalidateProject(projectName);
+      broadcast({ type: "project-updated", projectName });
+    }, 150)
+  );
 }
 
 export function startWatcher(): void {
   try {
     const watcher = watch(CLAUDE_PROJECTS_DIR, {
       ignoreInitial: true,
-      depth: 1,
-      ignored: [/node_modules/, /\.git/],
-      awaitWriteFinish: { stabilityThreshold: 300 },
+      depth: 2,
+      ignored: [/node_modules/, /\.git/, /subagents/],
     });
 
     watcher.on("change", handleFileChange);

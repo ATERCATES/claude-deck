@@ -170,55 +170,78 @@ export async function getSessions(
   const files = getJsonlFiles(projectDir);
   const sessionMap = new Map<
     string,
-    { summary: string; lastActivity: string; messageCount: number; cwd: string | null }
+    {
+      summary: string;
+      lastActivity: string;
+      messageCount: number;
+      cwd: string | null;
+    }
   >();
 
-  for (const file of files) {
-    const entries = await readJsonlFile(file);
-    for (const entry of entries) {
-      if (!entry.sessionId) continue;
-      if (entry.isApiErrorMessage) continue;
+  await Promise.all(
+    files.map(async (file) => {
+      const stream = fs.createReadStream(file);
+      const rl = readline.createInterface({
+        input: stream,
+        crlfDelay: Infinity,
+      });
 
-      const existing = sessionMap.get(entry.sessionId);
-      const ts = entry.timestamp || new Date(0).toISOString();
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        let entry: JsonlEntry;
+        try {
+          entry = JSON.parse(line);
+        } catch {
+          continue;
+        }
 
-      if (!existing) {
-        let summary = "";
-        if (entry.customTitle) {
-          summary = entry.customTitle;
-        } else if (entry.summary) {
-          summary = entry.summary;
-        } else if (entry.message?.role === "user" && entry.message.content) {
-          summary = extractUserText(entry.message.content) || "";
-        }
-        sessionMap.set(entry.sessionId, {
-          summary,
-          lastActivity: ts,
-          messageCount: 1,
-          cwd: entry.cwd || null,
-        });
-      } else {
-        existing.messageCount++;
-        if (ts > existing.lastActivity) {
-          existing.lastActivity = ts;
-        }
-        if (!existing.cwd && entry.cwd) {
-          existing.cwd = entry.cwd;
-        }
-        if (entry.customTitle) {
-          existing.summary = entry.customTitle;
-        } else if (!existing.summary && entry.summary) {
-          existing.summary = entry.summary;
-        } else if (
-          !existing.summary &&
-          entry.message?.role === "user" &&
-          entry.message.content
-        ) {
-          existing.summary = extractUserText(entry.message.content) || "";
+        if (!entry.sessionId) continue;
+        if (entry.isApiErrorMessage) continue;
+
+        const existing = sessionMap.get(entry.sessionId);
+        const ts = entry.timestamp || new Date(0).toISOString();
+
+        if (!existing) {
+          let summary = "";
+          if (entry.customTitle) {
+            summary = entry.customTitle;
+          } else if (entry.summary) {
+            summary = entry.summary;
+          } else if (
+            entry.message?.role === "user" &&
+            entry.message.content
+          ) {
+            summary = extractUserText(entry.message.content) || "";
+          }
+          sessionMap.set(entry.sessionId, {
+            summary,
+            lastActivity: ts,
+            messageCount: 1,
+            cwd: entry.cwd || null,
+          });
+        } else {
+          existing.messageCount++;
+          if (ts > existing.lastActivity) {
+            existing.lastActivity = ts;
+          }
+          if (!existing.cwd && entry.cwd) {
+            existing.cwd = entry.cwd;
+          }
+          if (entry.customTitle) {
+            existing.summary = entry.customTitle;
+          } else if (!existing.summary && entry.summary) {
+            existing.summary = entry.summary;
+          } else if (
+            !existing.summary &&
+            entry.message?.role === "user" &&
+            entry.message.content
+          ) {
+            existing.summary = extractUserText(entry.message.content) || "";
+          }
         }
       }
-    }
-  }
+    })
+  );
 
   const sessions = Array.from(sessionMap.entries())
     .map(([sessionId, data]) => ({ sessionId, ...data }))

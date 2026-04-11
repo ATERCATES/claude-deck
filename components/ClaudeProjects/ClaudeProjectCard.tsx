@@ -34,11 +34,13 @@ import type { ClaudeProject } from "@/data/claude";
 interface ClaudeProjectCardProps {
   project: ClaudeProject;
   showHidden: boolean;
+  onSelectSession?: (sessionId: string, directory: string) => void;
 }
 
 export function ClaudeProjectCard({
   project,
   showHidden,
+  onSelectSession,
 }: ClaudeProjectCardProps) {
   const [expanded, setExpanded] = useState(false);
   const { data: sessionsData } = useClaudeSessionsQuery(
@@ -141,6 +143,8 @@ export function ClaudeProjectCard({
               <ClaudeSessionCard
                 key={session.sessionId}
                 session={session}
+                projectDirectory={project.directory}
+                onSelect={onSelectSession}
                 onHide={() =>
                   hideItem.mutate({
                     itemType: "session",

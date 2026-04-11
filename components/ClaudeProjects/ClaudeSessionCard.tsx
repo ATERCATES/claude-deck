@@ -13,8 +13,10 @@ import type { ClaudeSession } from "@/data/claude";
 
 interface ClaudeSessionCardProps {
   session: ClaudeSession;
+  projectDirectory: string | null;
   onHide: () => void;
   onUnhide: () => void;
+  onSelect?: (sessionId: string, directory: string) => void;
 }
 
 function getTimeAgo(dateStr: string): string {
@@ -37,11 +39,20 @@ function getTimeAgo(dateStr: string): string {
 
 export function ClaudeSessionCard({
   session,
+  projectDirectory,
   onHide,
   onUnhide,
+  onSelect,
 }: ClaudeSessionCardProps) {
+  const handleClick = () => {
+    if (onSelect && projectDirectory) {
+      onSelect(session.sessionId, projectDirectory);
+    }
+  };
+
   return (
     <div
+      onClick={handleClick}
       className={cn(
         "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm",
         "hover:bg-accent/50",

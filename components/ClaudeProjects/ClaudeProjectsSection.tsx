@@ -5,7 +5,13 @@ import { Eye, EyeOff } from "lucide-react";
 import { useClaudeProjectsQuery } from "@/data/claude";
 import { ClaudeProjectCard } from "./ClaudeProjectCard";
 
-export function ClaudeProjectsSection() {
+interface ClaudeProjectsSectionProps {
+  onSelectSession?: (sessionId: string, directory: string) => void;
+}
+
+export function ClaudeProjectsSection({
+  onSelectSession,
+}: ClaudeProjectsSectionProps) {
   const { data: projects = [], isPending } = useClaudeProjectsQuery();
   const [showHidden, setShowHidden] = useState(false);
 
@@ -41,6 +47,7 @@ export function ClaudeProjectsSection() {
             key={project.name}
             project={project}
             showHidden={showHidden}
+            onSelectSession={onSelectSession}
           />
         ))}
       </div>

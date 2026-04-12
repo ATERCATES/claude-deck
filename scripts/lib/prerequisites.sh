@@ -437,4 +437,26 @@ check_and_install_prerequisites() {
     done
 
     log_success "Prerequisites installed"
+
+    configure_tmux
+}
+
+configure_tmux() {
+    local tmux_conf="$HOME/.tmux.conf"
+    if [ ! -f "$tmux_conf" ] || ! grep -q "mouse on" "$tmux_conf" 2>/dev/null; then
+        log_info "Configuring tmux for Agent-OS..."
+        cat >> "$tmux_conf" << 'TMUX'
+
+# Agent-OS: enable mouse for scroll support in web terminal
+set -g mouse on
+set -g history-limit 50000
+set -g default-terminal "xterm-256color"
+set -ga terminal-overrides ",xterm-256color:Tc"
+TMUX
+        log_success "tmux configured (mouse on, 50k history)"
+    fi
+
+    if tmux list-sessions &>/dev/null; then
+        tmux set -g mouse on 2>/dev/null || true
+    fi
 }

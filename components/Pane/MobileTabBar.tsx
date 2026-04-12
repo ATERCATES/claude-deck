@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { OpenInVSCode } from "./OpenInVSCode";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -204,6 +205,12 @@ export function MobileTabBar({
             />
           )}
         </div>
+      )}
+      {session?.working_directory && session.working_directory !== "~" && (
+        <OpenInVSCode
+          workingDirectory={session.working_directory}
+          className="h-7 w-7"
+        />
       )}
     </div>
   );

@@ -12,6 +12,7 @@ import {
   Users,
   Home,
 } from "lucide-react";
+import { OpenInVSCode } from "./OpenInVSCode";
 import {
   Tooltip,
   TooltipContent,
@@ -251,6 +252,9 @@ export function DesktopTabBar({
 
       {/* Pane Controls */}
       <div className="ml-auto flex items-center gap-0.5 px-2">
+        {session?.working_directory && session.working_directory !== "~" && (
+          <OpenInVSCode workingDirectory={session.working_directory} />
+        )}
         {hasAttachedTmux && (
           <Tooltip>
             <TooltipTrigger asChild>

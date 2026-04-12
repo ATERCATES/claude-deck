@@ -63,4 +63,5 @@ progress.md
 
 # Test screenshots and Playwright artifacts
 *.png
+!public/icons/*.png
 .playwright-mcp/

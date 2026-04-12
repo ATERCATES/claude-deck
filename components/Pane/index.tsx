@@ -57,6 +57,12 @@ interface PaneProps {
   ) => void;
   onMenuClick?: () => void;
   onSelectSession?: (sessionId: string) => void;
+  onResumeClaudeSession?: (
+    sessionId: string,
+    cwd: string,
+    summary: string,
+    projectName: string
+  ) => void;
 }
 
 type ViewMode = "terminal" | "files" | "git" | "workers";
@@ -68,6 +74,7 @@ export const Pane = memo(function Pane({
   onRegisterTerminal,
   onMenuClick,
   onSelectSession,
+  onResumeClaudeSession,
 }: PaneProps) {
   const { isMobile } = useViewport();
   const {
@@ -283,14 +290,13 @@ export const Pane = memo(function Pane({
       {isMobile ? (
         <MobileTabBar
           session={session}
-          sessions={sessions}
-          projects={projects}
+          claudeProjectName={activeTab?.claudeProjectName ?? null}
           viewMode={viewMode}
           isConductor={isConductor}
           workerCount={workerCount}
           onMenuClick={onMenuClick}
           onViewModeChange={setViewMode}
-          onSelectSession={onSelectSession}
+          onResumeClaudeSession={onResumeClaudeSession}
         />
       ) : (
         <DesktopTabBar

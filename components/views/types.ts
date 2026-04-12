@@ -65,7 +65,8 @@ export interface ViewProps {
   resumeClaudeSession: (
     claudeSessionId: string,
     cwd: string,
-    summary?: string
+    summary?: string,
+    projectName?: string
   ) => void;
 
   // Pane

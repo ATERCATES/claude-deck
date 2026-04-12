@@ -18,6 +18,7 @@ export interface TabData {
   id: string;
   sessionId: string | null;
   sessionName: string | null;
+  claudeProjectName: string | null;
   attachedTmux: string | null;
 }
 
@@ -43,6 +44,7 @@ export function createTab(): TabData {
     id: generateTabId(),
     sessionId: null,
     sessionName: null,
+    claudeProjectName: null,
     attachedTmux: null,
   };
 }

@@ -9,7 +9,8 @@ interface ClaudeProjectsSectionProps {
   onSelectSession?: (
     sessionId: string,
     directory: string,
-    summary: string
+    summary: string,
+    projectName: string
   ) => void;
   onNewSession?: () => void;
 }

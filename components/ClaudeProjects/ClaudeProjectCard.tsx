@@ -39,7 +39,8 @@ interface ClaudeProjectCardProps {
   onSelectSession?: (
     sessionId: string,
     directory: string,
-    summary: string
+    summary: string,
+    projectName: string
   ) => void;
   onNewSession?: () => void;
 }
@@ -170,6 +171,7 @@ export function ClaudeProjectCard({
               <ClaudeSessionCard
                 key={session.sessionId}
                 session={session}
+                projectName={project.name}
                 onSelect={onSelectSession}
                 onHide={() =>
                   hideItem.mutate({

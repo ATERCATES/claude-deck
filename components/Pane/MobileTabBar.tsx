@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,8 +9,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Menu,
-  ChevronLeft,
-  ChevronRight,
   Terminal as TerminalIcon,
   FolderOpen,
   GitBranch,
@@ -20,7 +17,8 @@ import {
   Circle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Session, Project } from "@/lib/db";
+import type { Session } from "@/lib/db";
+import { useClaudeSessionsQuery } from "@/data/claude";
 import type { LucideIcon } from "lucide-react";
 
 type ViewMode = "terminal" | "files" | "git" | "workers";
@@ -62,74 +60,34 @@ function ViewModeButton({
 
 interface MobileTabBarProps {
   session: Session | null | undefined;
-  sessions: Session[];
-  projects: Project[];
+  claudeProjectName: string | null;
   viewMode: ViewMode;
   isConductor: boolean;
   workerCount: number;
   onMenuClick?: () => void;
   onViewModeChange: (mode: ViewMode) => void;
-  onSelectSession?: (sessionId: string) => void;
+  onResumeClaudeSession?: (
+    sessionId: string,
+    cwd: string,
+    summary: string,
+    projectName: string
+  ) => void;
 }
 
 export function MobileTabBar({
   session,
-  sessions,
-  projects,
+  claudeProjectName,
   viewMode,
   isConductor,
   workerCount,
   onMenuClick,
   onViewModeChange,
-  onSelectSession,
+  onResumeClaudeSession,
 }: MobileTabBarProps) {
-  // Find current session index and calculate prev/next
-  const currentIndex = session
-    ? sessions.findIndex((s) => s.id === session.id)
-    : -1;
-
-  // Get project name for current session
-  const projectName = session?.project_id
-    ? projects.find((p) => p.id === session.project_id)?.name
-    : null;
-  const hasPrev = currentIndex > 0;
-  const hasNext = currentIndex >= 0 && currentIndex < sessions.length - 1;
-
-  // Debounce to prevent rapid clicking causing command interference
-  const [isNavigating, setIsNavigating] = useState(false);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
-
-  const handleNavigate = useCallback(
-    (sessionId: string) => {
-      if (isNavigating || !onSelectSession) return;
-
-      setIsNavigating(true);
-      onSelectSession(sessionId);
-
-      // Allow next navigation after delay (tmux commands need time)
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        setIsNavigating(false);
-      }, 500);
-    },
-    [isNavigating, onSelectSession]
+  const { data: claudeSessions } = useClaudeSessionsQuery(
+    claudeProjectName || ""
   );
-
-  const handlePrev = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (hasPrev && !isNavigating) {
-      handleNavigate(sessions[currentIndex - 1].id);
-    }
-  };
-
-  const handleNext = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (hasNext && !isNavigating) {
-      handleNavigate(sessions[currentIndex + 1].id);
-    }
-  };
+  const sessionList = claudeProjectName ? claudeSessions?.sessions || [] : [];
 
   return (
     <div
@@ -153,19 +111,8 @@ export function MobileTabBar({
         </Button>
       )}
 
-      {/* Session/Tab navigation */}
-      <div className="flex min-w-0 flex-1 items-center gap-1">
-        <button
-          type="button"
-          onClick={handlePrev}
-          onTouchEnd={(e) => e.stopPropagation()}
-          disabled={!hasPrev || isNavigating}
-          className="hover:bg-accent flex h-8 w-8 shrink-0 items-center justify-center rounded-md disabled:pointer-events-none disabled:opacity-50"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-
-        {/* Session selector dropdown */}
+      {/* Session selector */}
+      <div className="flex min-w-0 flex-1 items-center">
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <button
@@ -174,32 +121,32 @@ export function MobileTabBar({
             >
               <span className="truncate text-sm font-medium">
                 {session?.name || "No session"}
-                {projectName && projectName !== "Uncategorized" && (
-                  <span className="text-muted-foreground font-normal">
-                    {" "}
-                    [{projectName}]
-                  </span>
-                )}
               </span>
-              <ChevronDown className="text-muted-foreground h-3 w-3 shrink-0" />
+              {sessionList.length > 0 && (
+                <ChevronDown className="text-muted-foreground h-3 w-3 shrink-0" />
+              )}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="center"
-            className="max-h-[300px] min-w-[200px] overflow-y-auto"
-          >
-            {sessions
-              .filter((s) => !s.conductor_session_id)
-              .map((s) => {
-                const sessionProject = s.project_id
-                  ? projects.find((p) => p.id === s.project_id)
-                  : null;
-                const isActive = s.id === session?.id;
-
+          {sessionList.length > 0 && (
+            <DropdownMenuContent
+              align="center"
+              className="max-h-[300px] min-w-[200px] overflow-y-auto"
+            >
+              {sessionList.map((s) => {
+                const isActive = s.sessionId === session?.id;
                 return (
                   <DropdownMenuItem
-                    key={s.id}
-                    onSelect={() => onSelectSession?.(s.id)}
+                    key={s.sessionId}
+                    onSelect={() => {
+                      if (s.cwd && claudeProjectName) {
+                        onResumeClaudeSession?.(
+                          s.sessionId,
+                          s.cwd,
+                          s.summary,
+                          claudeProjectName
+                        );
+                      }
+                    }}
                     className={cn(
                       "flex items-center gap-2",
                       isActive && "bg-accent"
@@ -213,28 +160,13 @@ export function MobileTabBar({
                           : "text-muted-foreground"
                       )}
                     />
-                    <span className="flex-1 truncate">{s.name}</span>
-                    {sessionProject &&
-                      sessionProject.name !== "Uncategorized" && (
-                        <span className="text-muted-foreground text-xs">
-                          [{sessionProject.name}]
-                        </span>
-                      )}
+                    <span className="flex-1 truncate text-xs">{s.summary}</span>
                   </DropdownMenuItem>
                 );
               })}
-          </DropdownMenuContent>
+            </DropdownMenuContent>
+          )}
         </DropdownMenu>
-
-        <button
-          type="button"
-          onClick={handleNext}
-          onTouchEnd={(e) => e.stopPropagation()}
-          disabled={!hasNext || isNavigating}
-          className="hover:bg-accent flex h-8 w-8 shrink-0 items-center justify-center rounded-md disabled:pointer-events-none disabled:opacity-50"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
       </div>
 
       {/* View mode toggle */}

@@ -1,0 +1,14 @@
+services:
+  agent-os:
+    build: .
+    ports:
+      - "${PORT:-3011}:3011"
+    volumes:
+      - ${HOME}/.claude:/root/.claude:ro
+      - agent-os-data:/root/.agent-os
+    environment:
+      - PORT=3011
+    restart: unless-stopped
+
+volumes:
+  agent-os-data:

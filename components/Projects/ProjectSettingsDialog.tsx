@@ -41,7 +41,6 @@ import type {
 
 const AGENT_OPTIONS: { value: AgentType; label: string }[] = [
   { value: "claude", label: "Claude Code" },
-  { value: "opencode", label: "OpenCode" },
 ];
 
 const MODEL_OPTIONS = [

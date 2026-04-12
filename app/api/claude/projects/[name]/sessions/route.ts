@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCachedSessions } from "@/lib/claude/jsonl-cache";
+import { getCachedSessions, getCachedProjects } from "@/lib/claude/jsonl-cache";
 import { queries } from "@/lib/db";
 import fs from "fs";
 import path from "path";
 
-function resolveValidCwd(cwd: string | null): string {
+function resolveValidCwd(
+  cwd: string | null,
+  projectDirectory: string | null
+): string {
+  if (!cwd && projectDirectory) return projectDirectory;
   if (!cwd) return process.env.HOME || "/";
+  if (fs.existsSync(cwd)) return cwd;
   let dir = cwd;
   while (dir && dir !== "/" && !fs.existsSync(dir)) {
     dir = path.dirname(dir);
   }
-  return dir || process.env.HOME || "/";
+  if (dir && dir !== "/" && fs.existsSync(dir)) return dir;
+  return projectDirectory || process.env.HOME || "/";
 }
 
 interface RouteParams {
@@ -25,16 +31,24 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const offset = parseInt(searchParams.get("offset") || "0", 10);
     const includeHidden = searchParams.get("includeHidden") === "true";
 
-    const allSessions = await getCachedSessions(name);
+    const [allSessions, allProjects] = await Promise.all([
+      getCachedSessions(name),
+      getCachedProjects(),
+    ]);
+
+    const project = allProjects.find((p) => p.name === name);
+    const projectDir = project?.directory || null;
 
     const hiddenItems = await queries.getHiddenItems("session");
     const hiddenSet = new Set(hiddenItems.map((h) => h.item_id));
 
-    const enriched = allSessions.map((s) => ({
-      ...s,
-      cwd: resolveValidCwd(s.cwd),
-      hidden: hiddenSet.has(s.sessionId),
-    }));
+    const enriched = allSessions
+      .filter((s) => s.messageCount > 2 || s.cwd)
+      .map((s) => ({
+        ...s,
+        cwd: resolveValidCwd(s.cwd, projectDir),
+        hidden: hiddenSet.has(s.sessionId),
+      }));
 
     const filtered = includeHidden
       ? enriched

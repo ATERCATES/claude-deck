@@ -42,7 +42,7 @@ interface ClaudeProjectCardProps {
     summary: string,
     projectName: string
   ) => void;
-  onNewSession?: () => void;
+  onNewSession?: (cwd: string, projectName: string) => void;
 }
 
 export function ClaudeProjectCard({
@@ -113,7 +113,7 @@ export function ClaudeProjectCard({
           className="h-7 w-7 flex-shrink-0 opacity-100 md:h-6 md:w-6 md:opacity-0 md:group-hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
-            onNewSession();
+            onNewSession(project.directory || "~", project.name);
           }}
         >
           <Plus className="h-3.5 w-3.5" />

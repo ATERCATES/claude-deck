@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,30 +9,39 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Terminal, GitBranch, Clock, Check } from "lucide-react";
-import type { Session } from "@/lib/db";
+import { Terminal, Clock } from "lucide-react";
 import { CodeSearchResults } from "@/components/CodeSearch/CodeSearchResults";
 import { useRipgrepAvailable } from "@/data/code-search";
+import { useClaudeProjectsQuery, useClaudeSessionsQuery } from "@/data/claude";
+import type { ClaudeProject } from "@/data/claude";
 
 interface QuickSwitcherProps {
-  sessions: Session[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelectSession: (sessionId: string) => void;
+  onResumeClaudeSession: (
+    sessionId: string,
+    cwd: string,
+    summary: string,
+    projectName: string
+  ) => void;
   onSelectFile?: (file: string, line: number) => void;
   currentSessionId?: string;
   activeSessionWorkingDir?: string;
 }
 
-/**
- * Quick session switcher with search
- * Triggered by Cmd+K or button tap
- */
+interface FlatSession {
+  sessionId: string;
+  summary: string;
+  cwd: string;
+  lastActivity: string;
+  projectName: string;
+  projectDisplayName: string;
+}
+
 export function QuickSwitcher({
-  sessions,
   open,
   onOpenChange,
-  onSelectSession,
+  onResumeClaudeSession,
   onSelectFile,
   currentSessionId,
   activeSessionWorkingDir,
@@ -42,21 +51,68 @@ export function QuickSwitcher({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Check if ripgrep is available
   const { data: ripgrepAvailable } = useRipgrepAvailable();
+  const { data: projects } = useClaudeProjectsQuery();
 
-  // Filter sessions based on search query
-  const filteredSessions = sessions.filter((session) => {
-    if (!query) return true;
-    const q = query.toLowerCase();
-    return (
-      session.name?.toLowerCase().includes(q) ||
-      session.working_directory?.toLowerCase().includes(q) ||
-      session.agent_type?.toLowerCase().includes(q)
+  const topProjects = useMemo(() => {
+    if (!projects) return [];
+    return [...projects]
+      .sort(
+        (a, b) =>
+          new Date(b.lastActivity || 0).getTime() -
+          new Date(a.lastActivity || 0).getTime()
+      )
+      .slice(0, 8);
+  }, [projects]);
+
+  const topProjectName = topProjects[0]?.name || null;
+  const p1 = topProjects[1]?.name || null;
+  const p2 = topProjects[2]?.name || null;
+  const p3 = topProjects[3]?.name || null;
+
+  const s0 = useClaudeSessionsQuery(open ? topProjectName : null);
+  const s1 = useClaudeSessionsQuery(open ? p1 : null);
+  const s2 = useClaudeSessionsQuery(open ? p2 : null);
+  const s3 = useClaudeSessionsQuery(open ? p3 : null);
+
+  const allSessions = useMemo(() => {
+    const flat: FlatSession[] = [];
+    const queries = [s0, s1, s2, s3];
+    const projs = topProjects.slice(0, 4);
+
+    projs.forEach((project: ClaudeProject, i: number) => {
+      const sessions = queries[i]?.data?.sessions || [];
+      sessions.forEach((s) => {
+        if (s.cwd) {
+          flat.push({
+            sessionId: s.sessionId,
+            summary: s.summary,
+            cwd: s.cwd,
+            lastActivity: s.lastActivity,
+            projectName: project.name,
+            projectDisplayName: project.displayName,
+          });
+        }
+      });
+    });
+
+    return flat.sort(
+      (a, b) =>
+        new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
     );
-  });
+  }, [s0.data, s1.data, s2.data, s3.data, topProjects]);
 
-  // Reset state when dialog opens
+  const filteredSessions = useMemo(() => {
+    if (!query) return allSessions;
+    const q = query.toLowerCase();
+    return allSessions.filter(
+      (s) =>
+        s.summary.toLowerCase().includes(q) ||
+        s.projectDisplayName.toLowerCase().includes(q) ||
+        s.cwd.toLowerCase().includes(q)
+    );
+  }, [allSessions, query]);
+
   useEffect(() => {
     if (open) {
       setMode("sessions");
@@ -66,19 +122,16 @@ export function QuickSwitcher({
     }
   }, [open]);
 
-  // Force sessions mode if ripgrep is not available
   useEffect(() => {
     if (ripgrepAvailable === false && mode === "code") {
       setMode("sessions");
     }
   }, [ripgrepAvailable, mode]);
 
-  // Reset selected index when filtered results change
   useEffect(() => {
     setSelectedIndex(0);
   }, [query]);
 
-  // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       switch (e.key) {
@@ -95,7 +148,8 @@ export function QuickSwitcher({
         case "Enter":
           e.preventDefault();
           if (filteredSessions[selectedIndex]) {
-            onSelectSession(filteredSessions[selectedIndex].id);
+            const s = filteredSessions[selectedIndex];
+            onResumeClaudeSession(s.sessionId, s.cwd, s.summary, s.projectName);
             onOpenChange(false);
           }
           break;
@@ -105,10 +159,9 @@ export function QuickSwitcher({
           break;
       }
     },
-    [filteredSessions, selectedIndex, onSelectSession, onOpenChange]
+    [filteredSessions, selectedIndex, onResumeClaudeSession, onOpenChange]
   );
 
-  // Format relative time
   const formatTime = (dateStr: string | null) => {
     if (!dateStr) return "";
     const now = new Date();
@@ -122,7 +175,6 @@ export function QuickSwitcher({
     return `${Math.floor(hours / 24)}d ago`;
   };
 
-  // Handle file selection from code search
   const handleSelectFile = useCallback(
     (file: string, line: number) => {
       onOpenChange(false);
@@ -138,7 +190,6 @@ export function QuickSwitcher({
           <DialogTitle>Switch Session / Search Code</DialogTitle>
         </DialogHeader>
 
-        {/* Mode Toggle - only show if ripgrep is available */}
         {ripgrepAvailable === true && (
           <div className="border-border flex gap-2 border-b p-2">
             <button
@@ -166,7 +217,6 @@ export function QuickSwitcher({
           </div>
         )}
 
-        {/* Search Input */}
         <div className="border-border border-b p-3">
           <Input
             ref={inputRef}
@@ -182,7 +232,6 @@ export function QuickSwitcher({
           />
         </div>
 
-        {/* Content */}
         <div className="max-h-[300px] overflow-y-auto py-2">
           {mode === "sessions" ? (
             filteredSessions.length === 0 ? (
@@ -191,12 +240,17 @@ export function QuickSwitcher({
               </div>
             ) : (
               filteredSessions.map((session, index) => {
-                const isCurrent = session.id === currentSessionId;
+                const isCurrent = session.sessionId === currentSessionId;
                 return (
                   <button
-                    key={session.id}
+                    key={session.sessionId}
                     onClick={() => {
-                      onSelectSession(session.id);
+                      onResumeClaudeSession(
+                        session.sessionId,
+                        session.cwd,
+                        session.summary,
+                        session.projectName
+                      );
                       onOpenChange(false);
                     }}
                     className={cn(
@@ -207,47 +261,20 @@ export function QuickSwitcher({
                       isCurrent && "bg-primary/10"
                     )}
                   >
-                    {/* Icon */}
-                    <div
-                      className={cn(
-                        "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md",
-                        session.worktree_path
-                          ? "bg-purple-500/20 text-purple-400"
-                          : "bg-emerald-500/20 text-emerald-400"
-                      )}
-                    >
-                      {session.worktree_path ? (
-                        <GitBranch className="h-4 w-4" />
-                      ) : (
-                        <Terminal className="h-4 w-4" />
-                      )}
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-emerald-500/20 text-emerald-400">
+                      <Terminal className="h-4 w-4" />
                     </div>
-
-                    {/* Content */}
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate font-medium">
-                          {session.name || "Unnamed Session"}
-                        </span>
-                        {isCurrent && (
-                          <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />
-                        )}
-                      </div>
-                      <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                        <span className="truncate">
-                          {session.working_directory?.split("/").pop() || "~"}
-                        </span>
-                        <span>•</span>
-                        <span className="capitalize">
-                          {session.agent_type || "claude"}
-                        </span>
-                      </div>
+                      <span className="block truncate text-sm font-medium">
+                        {session.summary}
+                      </span>
+                      <span className="text-muted-foreground block truncate text-xs">
+                        {session.projectDisplayName}
+                      </span>
                     </div>
-
-                    {/* Time */}
                     <div className="text-muted-foreground flex flex-shrink-0 items-center gap-1 text-xs">
                       <Clock className="h-3 w-3" />
-                      <span>{formatTime(session.updated_at)}</span>
+                      <span>{formatTime(session.lastActivity)}</span>
                     </div>
                   </button>
                 );
@@ -262,7 +289,6 @@ export function QuickSwitcher({
           )}
         </div>
 
-        {/* Footer Hint */}
         <div className="border-border text-muted-foreground flex items-center gap-4 border-t px-4 py-2 text-xs">
           <span>
             <kbd className="bg-muted rounded px-1.5 py-0.5">↑↓</kbd> navigate

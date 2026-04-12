@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env
+.env.local
+*.db
+*.db-wal
+*.db-shm
+.playwright-mcp
+*.png
+.worktrees
+.claude
+src-tauri

@@ -1,4 +1,4 @@
-export const PROVIDER_IDS = ["claude", "opencode"] as const;
+export const PROVIDER_IDS = ["claude"] as const;
 
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
@@ -30,16 +30,6 @@ export const PROVIDERS: ProviderDefinition[] = [
     resumeFlag: "--resume",
     initialPromptFlag: "",
   },
-  {
-    id: "opencode",
-    name: "OpenCode",
-    description: "Multi-provider AI CLI",
-    cli: "opencode",
-    configDir: "~/.opencode.json",
-    supportsResume: false,
-    supportsFork: false,
-    initialPromptFlag: "--prompt",
-  },
 ];
 
 export const PROVIDER_MAP = new Map<ProviderId, ProviderDefinition>(
@@ -63,25 +53,18 @@ export function isValidProviderId(value: string): value is ProviderId {
 }
 
 export function getManagedSessionPattern(): RegExp {
-  const providerPattern = PROVIDER_IDS.join("|");
-  return new RegExp(
-    `^(${providerPattern})-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`,
-    "i"
-  );
+  return /^claude-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 }
 
 export function getProviderIdFromSessionName(
   sessionName: string
 ): ProviderId | null {
-  for (const id of PROVIDER_IDS) {
-    if (sessionName.startsWith(`${id}-`)) {
-      return id;
-    }
+  if (sessionName.startsWith("claude-")) {
+    return "claude";
   }
   return null;
 }
 
 export function getSessionIdFromName(sessionName: string): string {
-  const providerPattern = PROVIDER_IDS.join("|");
-  return sessionName.replace(new RegExp(`^(${providerPattern})-`, "i"), "");
+  return sessionName.replace(/^claude-/i, "");
 }

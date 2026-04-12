@@ -30,7 +30,6 @@ export const MAX_RECENT_DIRS = 5;
 
 export const AGENT_OPTIONS: { value: AgentType; label: string }[] = [
   { value: "claude", label: "Claude Code" },
-  { value: "opencode", label: "OpenCode" },
 ];
 
 export const MODEL_OPTIONS = [

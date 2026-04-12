@@ -1,7 +1,11 @@
 "use client";
 
 import type { Terminal as XTerm } from "@xterm/xterm";
-import { WS_RECONNECT_BASE_DELAY, WS_RECONNECT_MAX_DELAY } from "../constants";
+import {
+  WS_RECONNECT_BASE_DELAY,
+  WS_RECONNECT_MAX_DELAY,
+  WS_INACTIVITY_TIMEOUT,
+} from "../constants";
 
 export interface WebSocketCallbacks {
   onConnected?: () => void;
@@ -106,6 +110,16 @@ export function createWebSocketConnection(
     forceReconnect();
   };
 
+  let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+  const resetInactivityTimer = () => {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        forceReconnect();
+      }
+    }, WS_INACTIVITY_TIMEOUT);
+  };
+
   ws.onopen = () => {
     callbacks.onSetConnected(true);
     callbacks.onConnectionStateChange("connected");
@@ -113,11 +127,11 @@ export function createWebSocketConnection(
     callbacks.onConnected?.();
     sendResize(term.cols, term.rows);
     term.focus();
+    resetInactivityTimer();
   };
 
-  // Fight against Claude Code's forced top-scrolling bug
-  // See: https://github.com/anthropics/claude-code/issues/826
   ws.onmessage = (event) => {
+    resetInactivityTimer();
     try {
       const msg = JSON.parse(event.data);
       if (msg.type === "output") {
@@ -233,6 +247,7 @@ export function createWebSocketConnection(
   document.addEventListener("visibilitychange", handleVisibilityChange);
 
   const cleanup = () => {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);

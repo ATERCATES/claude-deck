@@ -61,7 +61,8 @@ export interface ViewProps {
   startDevServerProject: ProjectWithDevServers | null;
   setStartDevServerProjectId: (id: string | null) => void;
 
-  // Claude session resume
+  // Claude sessions
+  newClaudeSession: (cwd?: string, projectName?: string) => void;
   resumeClaudeSession: (
     claudeSessionId: string,
     cwd: string,

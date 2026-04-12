@@ -12,7 +12,7 @@ interface ClaudeProjectsSectionProps {
     summary: string,
     projectName: string
   ) => void;
-  onNewSession?: () => void;
+  onNewSession?: (cwd: string, projectName: string) => void;
 }
 
 function ProjectsSkeleton() {

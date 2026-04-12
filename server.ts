@@ -41,13 +41,36 @@ app.prepare().then(async () => {
       });
     } else if (pathname === "/ws/updates") {
       updatesWss.handleUpgrade(request, socket, head, (ws) => {
+        setupHeartbeat(ws);
         addUpdateClient(ws);
       });
     }
   });
 
+  // Heartbeat: ping every 30s, kill if no pong in 10s
+  const HEARTBEAT_INTERVAL = 30000;
+  const HEARTBEAT_TIMEOUT = 10000;
+
+  function setupHeartbeat(ws: WebSocket) {
+    let alive = true;
+    ws.on("pong", () => {
+      alive = true;
+    });
+    const interval = setInterval(() => {
+      if (!alive) {
+        ws.terminate();
+        clearInterval(interval);
+        return;
+      }
+      alive = false;
+      ws.ping();
+    }, HEARTBEAT_INTERVAL);
+    ws.on("close", () => clearInterval(interval));
+  }
+
   // Terminal connections
   terminalWss.on("connection", (ws: WebSocket) => {
+    setupHeartbeat(ws);
     let ptyProcess: pty.IPty;
     try {
       const shell = process.env.SHELL || "/bin/zsh";

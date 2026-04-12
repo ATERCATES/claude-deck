@@ -20,7 +20,7 @@ export interface SessionListProps {
     summary?: string,
     projectName?: string
   ) => void;
-  onNewSession?: () => void;
+  onNewSession?: (cwd?: string, projectName?: string) => void;
   onCreateDevServer?: (opts: {
     projectId: string;
     type: "node" | "docker";

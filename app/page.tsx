@@ -37,6 +37,7 @@ import { getProvider } from "@/lib/providers";
 import { DesktopView } from "@/components/views/DesktopView";
 import { MobileView } from "@/components/views/MobileView";
 import { getPendingPrompt, clearPendingPrompt } from "@/stores/initialPrompt";
+import { NewClaudeSessionDialog } from "@/components/NewClaudeSessionDialog";
 
 function HomeContent() {
   // UI State
@@ -309,9 +310,9 @@ function HomeContent() {
 
       const tmuxName = `claude-${claudeSessionId}`;
       const tmuxCmd = [
-        `tmux attach -t ${tmuxName} 2>/dev/null`,
-        `tmux new -s ${tmuxName} -c "${cwd}" "claude --resume ${claudeSessionId}"`,
-      ].join(" || ");
+        `tmux kill-session -t ${tmuxName} 2>/dev/null;`,
+        `tmux new -s ${tmuxName} -c "${cwd}" "claude --resume ${claudeSessionId} || claude --continue"`,
+      ].join(" ");
 
       if (isInTmux) {
         terminal.sendInput("\x02d");
@@ -337,6 +338,58 @@ function HomeContent() {
       );
     },
     [getTerminalWithFallback, getActiveTab, attachSession]
+  );
+
+  const [newSessionPending, setNewSessionPending] = useState<{
+    cwd: string;
+    projectName: string;
+  } | null>(null);
+
+  const newClaudeSession = useCallback((cwd?: string, projectName?: string) => {
+    setNewSessionPending({ cwd: cwd || "~", projectName: projectName || "" });
+  }, []);
+
+  const handleNewClaudeSessionConfirm = useCallback(
+    (name: string) => {
+      if (!newSessionPending) return;
+      setNewSessionPending(null);
+
+      const terminalInfo = getTerminalWithFallback();
+      if (!terminalInfo) return;
+
+      const { terminal, paneId } = terminalInfo;
+      const activeTab = getActiveTab(paneId);
+      const isInTmux = !!activeTab?.attachedTmux;
+      const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const tmuxName = `claude-new-${id}`;
+      const { cwd, projectName } = newSessionPending;
+      const tmuxCmd = `tmux new -s ${tmuxName} -c "${cwd}" "claude"`;
+
+      if (isInTmux) {
+        terminal.sendInput("\x02d");
+      }
+
+      setTimeout(
+        () => {
+          terminal.sendInput("\x03");
+          setTimeout(() => {
+            terminal.sendCommand(tmuxCmd);
+            attachSession(paneId, id, tmuxName, name, projectName, cwd);
+            terminal.focus();
+          }, 50);
+        },
+        isInTmux ? 100 : 0
+      );
+
+      if (isMobile) setSidebarOpen(false);
+    },
+    [
+      newSessionPending,
+      getTerminalWithFallback,
+      getActiveTab,
+      attachSession,
+      isMobile,
+    ]
   );
 
   // Notification click handler
@@ -539,15 +592,28 @@ function HomeContent() {
     handleCreateDevServer: createDevServer,
     startDevServerProject,
     setStartDevServerProjectId,
+    newClaudeSession,
     resumeClaudeSession,
     renderPane,
   };
 
-  if (isMobile) {
-    return <MobileView {...viewProps} />;
-  }
+  const view = isMobile ? (
+    <MobileView {...viewProps} />
+  ) : (
+    <DesktopView {...viewProps} />
+  );
 
-  return <DesktopView {...viewProps} />;
+  return (
+    <>
+      {view}
+      <NewClaudeSessionDialog
+        open={!!newSessionPending}
+        projectName={newSessionPending?.projectName || ""}
+        onClose={() => setNewSessionPending(null)}
+        onConfirm={handleNewClaudeSessionConfirm}
+      />
+    </>
+  );
 }
 
 export default function Home() {

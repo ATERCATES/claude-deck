@@ -91,7 +91,6 @@ export const AGENT_OPTIONS: {
   description: string;
 }[] = [
   { value: "claude", label: "Claude Code", description: "Anthropic's CLI" },
-  { value: "opencode", label: "OpenCode", description: "Multi-provider CLI" },
 ];
 
 // Props for main dialog

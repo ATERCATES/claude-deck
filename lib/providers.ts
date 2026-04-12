@@ -99,45 +99,8 @@ export const claudeProvider: AgentProvider = {
   idlePatterns: [/^>\s*$/m, /claude.*>\s*$/im, /✻\s*Sautéed/i, /✻\s*Done/i],
 };
 
-export const opencodeProvider: AgentProvider = {
-  id: "opencode",
-  name: "OpenCode",
-  description: "Multi-provider AI CLI",
-  command: "opencode",
-  configDir: "~/.opencode.json",
-  supportsResume: false,
-  supportsFork: false,
-
-  buildFlags(options: BuildFlagsOptions): string[] {
-    const def = getProviderDefinition("opencode");
-    const flags: string[] = [];
-
-    if (options.initialPrompt?.trim() && def.initialPromptFlag) {
-      const prompt = options.initialPrompt.trim();
-      const escapedPrompt = prompt.replace(/'/g, "'\\''");
-      flags.push(def.initialPromptFlag);
-      flags.push(`'${escapedPrompt}'`);
-    }
-
-    return flags;
-  },
-
-  waitingPatterns: [
-    /\[Y\/n\]/i,
-    /\[y\/N\]/i,
-    /confirm/i,
-    /Press Enter/i,
-    /\(yes\/no\)/i,
-  ],
-
-  runningPatterns: [/thinking/i, /processing/i, /working/i, SPINNER_CHARS],
-
-  idlePatterns: [/^>\s*$/m, /opencode.*>\s*$/im, /\$\s*$/m],
-};
-
 export const providers: Record<AgentType, AgentProvider> = {
   claude: claudeProvider,
-  opencode: opencodeProvider,
 };
 
 export function getProvider(agentType: AgentType): AgentProvider {

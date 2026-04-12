@@ -191,6 +191,20 @@ export function useTerminalConnection({
       cleanupWebSocket = wsManager.cleanup;
       reconnectFnRef.current = wsManager.reconnect;
 
+      // In alternate buffer (tmux + Claude Code), intercept wheel events
+      // and send mouse wheel escape sequences directly to tmux via PTY.
+      // Without this, xterm.js converts wheel to arrow keys in alt buffer.
+      term.attachCustomWheelEventHandler((ev: WheelEvent) => {
+        if (term.buffer.active.type !== "alternate") return true;
+        const lines = Math.ceil(Math.abs(ev.deltaY) / 30) || 1;
+        const button = ev.deltaY < 0 ? 64 : 65; // 64=scroll up, 65=scroll down
+        const seq = `\x1b[<${button};1;1M`;
+        for (let i = 0; i < lines; i++) {
+          wsManager.sendInput(seq);
+        }
+        return false;
+      });
+
       // Setup resize handlers
       cleanupResizeHandlers = setupResizeHandlers({
         term,

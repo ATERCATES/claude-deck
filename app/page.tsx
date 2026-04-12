@@ -347,7 +347,8 @@ function HomeContent() {
       const { terminal, paneId } = terminalInfo;
       const activeTab = getActiveTab(paneId);
       const isInTmux = !!activeTab?.attachedTmux;
-      const sessionId = crypto.randomUUID();
+      const sessionId =
+        Math.random().toString(36).slice(2) + Date.now().toString(36);
       const tmuxName = `claude-${sessionId}`;
       const dir = cwd || "~";
       const tmuxCmd = `tmux new -s ${tmuxName} -c "${dir}" "claude"`;

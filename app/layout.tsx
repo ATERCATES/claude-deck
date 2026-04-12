@@ -17,8 +17,21 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "AgentOS",
   description: "AI Agent Command Center",
+  manifest: "/manifest.json",
   icons: {
     icon: "/icon.svg",
+    apple: [
+      { url: "/icons/icon-152x152.png", sizes: "152x152" },
+      { url: "/icons/icon-192x192.png", sizes: "192x192" },
+    ],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "AgentOS",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
   },
 };
 
@@ -79,6 +92,18 @@ export default function RootLayout({
             `,
           }}
         />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js');
+                });
+              }
+            `,
+          }}
+        />
+        <meta name="theme-color" content="#0a0a0a" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

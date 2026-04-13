@@ -6,6 +6,8 @@ import type {
   ProjectDevServer,
   ProjectRepository,
   DevServer,
+  User,
+  AuthSession,
 } from "./types";
 
 function query<T>(sql: string, params: unknown[] = []): T[] {
@@ -457,4 +459,66 @@ export const queries = {
       itemType,
       itemId,
     ]),
+
+  getUserCount(): number {
+    return (
+      queryOne<{ count: number }>("SELECT COUNT(*) as count FROM users") ?? {
+        count: 0,
+      }
+    ).count;
+  },
+
+  getUserByUsername(username: string): User | null {
+    return queryOne<User>("SELECT * FROM users WHERE username = ?", [username]);
+  },
+
+  getUserById(id: string): User | null {
+    return queryOne<User>("SELECT * FROM users WHERE id = ?", [id]);
+  },
+
+  createUser(
+    id: string,
+    username: string,
+    passwordHash: string,
+    totpSecret: string | null
+  ): void {
+    execute(
+      "INSERT INTO users (id, username, password_hash, totp_secret) VALUES (?, ?, ?, ?)",
+      [id, username, passwordHash, totpSecret]
+    );
+  },
+
+  getAuthSessionByToken(token: string): AuthSession | null {
+    return queryOne<AuthSession>(
+      "SELECT * FROM auth_sessions WHERE token = ?",
+      [token]
+    );
+  },
+
+  createAuthSession(
+    id: string,
+    token: string,
+    userId: string,
+    expiresAt: string
+  ): void {
+    execute(
+      "INSERT INTO auth_sessions (id, token, user_id, expires_at) VALUES (?, ?, ?, ?)",
+      [id, token, userId, expiresAt]
+    );
+  },
+
+  renewAuthSession(token: string, expiresAt: string): void {
+    execute("UPDATE auth_sessions SET expires_at = ? WHERE token = ?", [
+      expiresAt,
+      token,
+    ]);
+  },
+
+  deleteAuthSession(token: string): void {
+    execute("DELETE FROM auth_sessions WHERE token = ?", [token]);
+  },
+
+  deleteExpiredAuthSessions(): void {
+    execute("DELETE FROM auth_sessions WHERE expires_at < datetime('now')");
+  },
 };

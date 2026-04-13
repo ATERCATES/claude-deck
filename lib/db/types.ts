@@ -90,3 +90,19 @@ export interface DevServer {
   created_at: string;
   updated_at: string;
 }
+
+export interface User {
+  id: string;
+  username: string;
+  password_hash: string;
+  totp_secret: string | null;
+  created_at: string;
+}
+
+export interface AuthSession {
+  id: string;
+  token: string;
+  user_id: string;
+  expires_at: string;
+  created_at: string;
+}

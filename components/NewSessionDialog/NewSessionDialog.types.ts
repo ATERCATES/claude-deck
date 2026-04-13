@@ -3,7 +3,6 @@ import type { ProjectWithDevServers } from "@/lib/projects";
 
 // LocalStorage keys
 export const SKIP_PERMISSIONS_KEY = "agentOS:skipPermissions";
-export const AGENT_TYPE_KEY = "agentOS:defaultAgentType";
 export const RECENT_DIRS_KEY = "agentOS:recentDirectories";
 export const USE_TMUX_KEY = "agentOS:useTmux";
 export const MAX_RECENT_DIRS = 5;
@@ -83,15 +82,6 @@ export interface GitInfo {
   defaultBranch: string | null;
   currentBranch: string | null;
 }
-
-// Agent type options
-export const AGENT_OPTIONS: {
-  value: AgentType;
-  label: string;
-  description: string;
-}[] = [
-  { value: "claude", label: "Claude Code", description: "Anthropic's CLI" },
-];
 
 // Props for main dialog
 export interface NewSessionDialogProps {

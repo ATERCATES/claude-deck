@@ -33,7 +33,7 @@ import { useDevServersManager } from "@/hooks/useDevServersManager";
 import { useSessionStatuses } from "@/hooks/useSessionStatuses";
 import type { Session } from "@/lib/db";
 import type { TerminalHandle } from "@/components/Terminal";
-import { getProvider } from "@/lib/providers";
+import { CLAUDE_COMMAND, buildClaudeFlags } from "@/lib/providers";
 import { DesktopView } from "@/components/views/DesktopView";
 import { MobileView } from "@/components/views/MobileView";
 import { getPendingPrompt, clearPendingPrompt } from "@/stores/initialPrompt";
@@ -152,16 +152,9 @@ function HomeContent() {
     async (
       session: Session
     ): Promise<{ sessionName: string; cwd: string; command: string }> => {
-      const provider = getProvider(session.agent_type || "claude");
-      const sessionName = session.tmux_name || `${provider.id}-${session.id}`;
+      const sessionName = session.tmux_name || `claude-${session.id}`;
       const cwd = session.working_directory?.replace("~", "$HOME") || "$HOME";
 
-      // TODO: Add explicit "Enable Orchestration" toggle that creates .mcp.json
-      // for conductor sessions. Removed auto-creation because it pollutes projects
-      // with .mcp.json files that aren't in their .gitignore.
-      // See: /api/sessions/[id]/mcp-config, lib/mcp-config.ts
-
-      // Get parent session ID for forking
       let parentSessionId: string | null = null;
       if (!session.claude_session_id && session.parent_session_id) {
         const parentSession = sessions.find(
@@ -170,22 +163,20 @@ function HomeContent() {
         parentSessionId = parentSession?.claude_session_id || null;
       }
 
-      // Check for pending initial prompt
       const initialPrompt = getPendingPrompt(session.id);
       if (initialPrompt) {
         clearPendingPrompt(session.id);
       }
 
-      const flags = provider.buildFlags({
+      const flags = buildClaudeFlags({
         sessionId: session.claude_session_id,
         parentSessionId,
         autoApprove: session.auto_approve,
         model: session.model,
         initialPrompt: initialPrompt || undefined,
       });
-      const flagsStr = flags.join(" ");
 
-      const agentCmd = `${provider.command} ${flagsStr}`;
+      const agentCmd = `${CLAUDE_COMMAND} ${flags.join(" ")}`;
       const command = await getInitScriptCommand(agentCmd);
 
       return { sessionName, cwd, command };

@@ -11,7 +11,7 @@ import { promisify } from "util";
 import { queries, type Session } from "./db";
 import { createWorktree, deleteWorktree } from "./worktrees";
 import { setupWorktree } from "./env-setup";
-import { type AgentType, getProvider } from "./providers";
+import { type AgentType, CLAUDE_COMMAND, buildClaudeFlags } from "./providers";
 import { getStatusSnapshot } from "./status-monitor";
 import { getSessionIdFromName } from "./providers/registry";
 import { wrapWithBanner } from "./banner";
@@ -95,7 +95,7 @@ export async function spawnWorker(
 
   const sessionId = randomUUID();
   const sessionName = taskToSessionName(task);
-  const provider = getProvider(agentType);
+  // Provider is always claude
 
   let worktreePath: string | null = null;
   let actualWorkingDir = workingDirectory;
@@ -132,7 +132,7 @@ export async function spawnWorker(
   }
 
   // Create session in database
-  const tmuxName = `${provider.id}-${sessionId}`;
+  const tmuxName = `claude-${sessionId}`;
   await queries.createWorkerSession(
     sessionId,
     sessionName,
@@ -157,15 +157,15 @@ export async function spawnWorker(
   }
 
   // Create tmux session and start the agent
-  const tmuxSessionName = `${provider.id}-${sessionId}`;
+  const tmuxSessionName = `claude-${sessionId}`;
   const cwd = actualWorkingDir.replace("~", "$HOME");
 
   // Build the initial prompt command (workers use auto-approve by default for automation)
-  const flags = provider.buildFlags({ model, autoApprove: true });
+  const flags = buildClaudeFlags({ model, autoApprove: true });
   const flagsStr = flags.join(" ");
 
   // Create tmux session with the agent and banner
-  const agentCmd = `${provider.command} ${flagsStr}`;
+  const agentCmd = `${CLAUDE_COMMAND} ${flagsStr}`;
   const newSessionCmd = wrapWithBanner(agentCmd);
   const createCmd = `tmux set -g mouse on 2>/dev/null; tmux new-session -d -s "${tmuxSessionName}" -c "${cwd}" "${newSessionCmd}"`;
 
@@ -270,8 +270,7 @@ export async function getWorkers(
   const workerInfos: WorkerInfo[] = [];
 
   for (const worker of workers) {
-    const provider = getProvider(worker.agent_type || "claude");
-    const tmuxSessionName = worker.tmux_name || `${provider.id}-${worker.id}`;
+    const tmuxSessionName = worker.tmux_name || `claude-${worker.id}`;
 
     // Get live status from cached monitor snapshot
     const sessionId = getSessionIdFromName(tmuxSessionName);
@@ -317,8 +316,7 @@ export async function getWorkerOutput(
     throw new Error(`Worker ${workerId} not found`);
   }
 
-  const provider = getProvider(session.agent_type || "claude");
-  const tmuxSessionName = session.tmux_name || `${provider.id}-${workerId}`;
+  const tmuxSessionName = session.tmux_name || `claude-${workerId}`;
 
   try {
     const { stdout } = await execAsync(
@@ -342,8 +340,7 @@ export async function sendToWorker(
     throw new Error(`Worker ${workerId} not found`);
   }
 
-  const provider = getProvider(session.agent_type || "claude");
-  const tmuxSessionName = session.tmux_name || `${provider.id}-${workerId}`;
+  const tmuxSessionName = session.tmux_name || `claude-${workerId}`;
 
   try {
     const escapedMessage = message.replace(/"/g, '\\"').replace(/\$/g, "\\$");
@@ -382,8 +379,7 @@ export async function killWorker(
     return;
   }
 
-  const provider = getProvider(session.agent_type || "claude");
-  const tmuxSessionName = session.tmux_name || `${provider.id}-${workerId}`;
+  const tmuxSessionName = session.tmux_name || `claude-${workerId}`;
 
   // Kill tmux session
   try {

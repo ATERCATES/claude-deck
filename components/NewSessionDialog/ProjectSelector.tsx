@@ -9,14 +9,11 @@ import {
 } from "@/components/ui/select";
 import { Plus } from "lucide-react";
 import type { ProjectWithDevServers } from "@/lib/projects";
-import type { AgentType } from "@/lib/providers";
-
 interface ProjectSelectorProps {
   projects: ProjectWithDevServers[];
   projectId: string | null;
   onProjectChange: (projectId: string | null) => void;
   workingDirectory: string;
-  agentType: AgentType;
   showNewProject: boolean;
   onShowNewProjectChange: (show: boolean) => void;
   newProjectName: string;
@@ -31,7 +28,6 @@ export function ProjectSelector({
   projectId,
   onProjectChange,
   workingDirectory,
-  agentType,
   showNewProject,
   onShowNewProjectChange,
   newProjectName,
@@ -129,7 +125,7 @@ export function ProjectSelector({
       {showNewProject && (
         <p className="text-muted-foreground text-xs">
           {workingDirectory && workingDirectory !== "~"
-            ? `New project will use: ${workingDirectory}, ${agentType}`
+            ? `New project will use: ${workingDirectory}`
             : "Enter a working directory above to create a project"}
         </p>
       )}
@@ -137,8 +133,7 @@ export function ProjectSelector({
         selectedProject &&
         !selectedProject.is_uncategorized && (
           <p className="text-muted-foreground text-xs">
-            Settings inherited: {selectedProject.working_directory},{" "}
-            {selectedProject.agent_type}
+            Settings inherited: {selectedProject.working_directory}
           </p>
         )}
     </div>

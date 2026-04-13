@@ -1,16 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
-import { getProviderDefinition, type AgentType } from "@/lib/providers";
+import type { AgentType } from "@/lib/providers";
 import type { ProjectWithDevServers } from "@/lib/projects";
 import { setPendingPrompt } from "@/stores/initialPrompt";
 import { useCreateSession } from "@/data/sessions";
 import {
   type GitInfo,
   SKIP_PERMISSIONS_KEY,
-  AGENT_TYPE_KEY,
   RECENT_DIRS_KEY,
   USE_TMUX_KEY,
   MAX_RECENT_DIRS,
-  AGENT_OPTIONS,
   generateFeatureName,
 } from "../NewSessionDialog.types";
 
@@ -42,7 +40,6 @@ export function useNewSessionForm({
   const [name, setName] = useState("");
   const [workingDirectory, setWorkingDirectory] = useState("~");
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [agentType, setAgentType] = useState<AgentType>("claude");
   const [skipPermissions, setSkipPermissions] = useState(false);
   const [useTmux, setUseTmux] = useState(true);
   const [initialPrompt, setInitialPrompt] = useState("");
@@ -120,13 +117,6 @@ export function useNewSessionForm({
     if (savedSkipPerms !== null) {
       setSkipPermissions(savedSkipPerms === "true");
     }
-    const savedAgentType = localStorage.getItem(AGENT_TYPE_KEY);
-    if (
-      savedAgentType &&
-      AGENT_OPTIONS.some((opt) => opt.value === savedAgentType)
-    ) {
-      setAgentType(savedAgentType as AgentType);
-    }
     const savedUseTmux = localStorage.getItem(USE_TMUX_KEY);
     if (savedUseTmux !== null) {
       setUseTmux(savedUseTmux === "true");
@@ -150,7 +140,6 @@ export function useNewSessionForm({
         const project = projects.find((p) => p.id === selectedProjectId);
         if (project && !project.is_uncategorized) {
           setWorkingDirectory(project.working_directory);
-          setAgentType(project.agent_type);
         }
       } else {
         // Otherwise, select first non-uncategorized project
@@ -158,24 +147,10 @@ export function useNewSessionForm({
         if (firstProject) {
           setProjectId(firstProject.id);
           setWorkingDirectory(firstProject.working_directory);
-          setAgentType(firstProject.agent_type);
         }
       }
     }
   }, [open, selectedProjectId, projects]);
-
-  useEffect(() => {
-    if (!skipPermissions) {
-      return;
-    }
-
-    if (getProviderDefinition(agentType).autoApproveFlag) {
-      return;
-    }
-
-    setSkipPermissions(false);
-    localStorage.setItem(SKIP_PERMISSIONS_KEY, "false");
-  }, [agentType, skipPermissions]);
 
   // Save directory to recent list
   const addRecentDirectory = useCallback((dir: string) => {
@@ -196,7 +171,6 @@ export function useNewSessionForm({
         const project = projects.find((p) => p.id === newProjectId);
         if (project && !project.is_uncategorized) {
           setWorkingDirectory(project.working_directory);
-          setAgentType(project.agent_type);
         }
       }
     },
@@ -206,11 +180,6 @@ export function useNewSessionForm({
   const handleSkipPermissionsChange = (checked: boolean) => {
     setSkipPermissions(checked);
     localStorage.setItem(SKIP_PERMISSIONS_KEY, String(checked));
-  };
-
-  const handleAgentTypeChange = (value: AgentType) => {
-    setAgentType(value);
-    localStorage.setItem(AGENT_TYPE_KEY, value);
   };
 
   const handleUseTmuxChange = (checked: boolean) => {
@@ -248,7 +217,7 @@ export function useNewSessionForm({
         name: name.trim() || undefined,
         workingDirectory,
         projectId,
-        agentType,
+        agentType: "claude" as AgentType,
         useWorktree,
         featureName: useWorktree ? featureName.trim() : null,
         baseBranch: useWorktree ? baseBranch : null,
@@ -291,7 +260,7 @@ export function useNewSessionForm({
       const newId = await onCreateProject(
         newProjectName.trim(),
         workingDirectory,
-        agentType
+        "claude"
       );
       if (newId) {
         setProjectId(newId);
@@ -328,7 +297,6 @@ export function useNewSessionForm({
     workingDirectory,
     setWorkingDirectory,
     projectId,
-    agentType,
     skipPermissions,
     useTmux,
     initialPrompt,
@@ -361,7 +329,6 @@ export function useNewSessionForm({
     // Handlers
     handleProjectChange,
     handleSkipPermissionsChange,
-    handleAgentTypeChange,
     handleUseTmuxChange,
     handleSubmit,
     handleCreateProject,

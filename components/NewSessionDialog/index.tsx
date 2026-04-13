@@ -10,7 +10,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNewSessionForm } from "./hooks/useNewSessionForm";
-import { AgentSelector } from "./AgentSelector";
 import { CreatingOverlay } from "./CreatingOverlay";
 import type { NewSessionDialogProps } from "./NewSessionDialog.types";
 
@@ -56,11 +55,6 @@ export function NewSessionDialog({
             <DialogTitle>New Session</DialogTitle>
           </DialogHeader>
           <form onSubmit={form.handleSubmit} className="space-y-4">
-            <AgentSelector
-              value={form.agentType}
-              onChange={form.handleAgentTypeChange}
-            />
-
             <div className="space-y-2">
               <label className="text-sm font-medium">
                 Name{" "}
@@ -100,7 +94,6 @@ export function NewSessionDialog({
           </form>
         </DialogContent>
       </Dialog>
-
     </>
   );
 }

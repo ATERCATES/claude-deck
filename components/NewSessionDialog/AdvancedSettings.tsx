@@ -1,11 +1,9 @@
 import { ChevronRight } from "lucide-react";
-import type { AgentType } from "@/lib/providers";
-import { getProviderDefinition } from "@/lib/providers";
+import { CLAUDE_AUTO_APPROVE_FLAG } from "@/lib/providers";
 
 interface AdvancedSettingsProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  agentType: AgentType;
   useTmux: boolean;
   onUseTmuxChange: (checked: boolean) => void;
   skipPermissions: boolean;
@@ -15,15 +13,11 @@ interface AdvancedSettingsProps {
 export function AdvancedSettings({
   open,
   onOpenChange,
-  agentType,
   useTmux,
   onUseTmuxChange,
   skipPermissions,
   onSkipPermissionsChange,
 }: AdvancedSettingsProps) {
-  const provider = getProviderDefinition(agentType);
-  const supportsAutoApprove = Boolean(provider.autoApproveFlag);
-
   return (
     <div className="border-border rounded-lg border">
       <button
@@ -58,16 +52,13 @@ export function AdvancedSettings({
               type="checkbox"
               id="skipPermissions"
               checked={skipPermissions}
-              disabled={!supportsAutoApprove}
               onChange={(e) => onSkipPermissionsChange(e.target.checked)}
-              className="border-border bg-background accent-primary h-4 w-4 rounded disabled:cursor-not-allowed disabled:opacity-50"
+              className="border-border bg-background accent-primary h-4 w-4 rounded"
             />
             <label htmlFor="skipPermissions" className="cursor-pointer text-sm">
               Auto-approve tool calls
               <span className="text-muted-foreground ml-1">
-                {supportsAutoApprove
-                  ? `(${provider.autoApproveFlag})`
-                  : "(not supported)"}
+                ({CLAUDE_AUTO_APPROVE_FLAG})
               </span>
             </label>
           </div>

@@ -104,16 +104,24 @@ export function createTerminal(
   // Use capture phase to intercept before browser default
   document.addEventListener("keydown", handleKeyDown, true);
 
-  const selectionDisposable = term.onSelectionChange(() => {
-    const selection = term.getSelection();
-    if (selection) {
-      copyToClipboard(selection);
+  // Handle OSC 52 (clipboard) sequences from tmux
+  const osc52Disposable = term.parser.registerOscHandler(52, (data) => {
+    const parts = data.split(";");
+    if (parts.length >= 2) {
+      const base64 = parts[parts.length - 1];
+      if (base64 && base64 !== "?") {
+        try {
+          const text = atob(base64);
+          copyToClipboard(text);
+        } catch {}
+      }
     }
+    return true;
   });
 
   const cleanup = () => {
     document.removeEventListener("keydown", handleKeyDown, true);
-    selectionDisposable.dispose();
+    osc52Disposable.dispose();
   };
 
   return { term, fitAddon, searchAddon, cleanup };

@@ -53,7 +53,7 @@ export function isValidProviderId(value: string): value is ProviderId {
 }
 
 export function getManagedSessionPattern(): RegExp {
-  return /^claude-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return /^claude-(new-)?[0-9a-z]{4,}/i;
 }
 
 export function getProviderIdFromSessionName(

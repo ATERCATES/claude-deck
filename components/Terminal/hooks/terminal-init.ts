@@ -38,7 +38,6 @@ export function createTerminal(
     cursorStyle: "bar",
     cursorWidth: 2,
     allowProposedApi: true,
-    copyOnSelection: true,
     theme: terminalTheme,
   });
 
@@ -105,8 +104,16 @@ export function createTerminal(
   // Use capture phase to intercept before browser default
   document.addEventListener("keydown", handleKeyDown, true);
 
+  const selectionDisposable = term.onSelectionChange(() => {
+    const selection = term.getSelection();
+    if (selection) {
+      copyToClipboard(selection);
+    }
+  });
+
   const cleanup = () => {
     document.removeEventListener("keydown", handleKeyDown, true);
+    selectionDisposable.dispose();
   };
 
   return { term, fitAddon, searchAddon, cleanup };

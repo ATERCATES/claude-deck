@@ -3,7 +3,7 @@ import path from "path";
 import os from "os";
 import { WebSocket } from "ws";
 import { invalidateProject, invalidateAll } from "./jsonl-cache";
-import { triggerTick } from "../status-monitor";
+import { onJsonlChange } from "../status-monitor";
 
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
 
@@ -53,8 +53,7 @@ export function startWatcher(): void {
 
     watcher.on("change", (fp) => {
       handleFileChange(fp);
-      // JSONL change likely means session activity — trigger immediate status check
-      if (fp.endsWith(".jsonl")) triggerTick();
+      if (fp.endsWith(".jsonl")) onJsonlChange(fp);
     });
     watcher.on("add", (fp) => {
       handleFileChange(fp);

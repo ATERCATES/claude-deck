@@ -1,24 +1,8 @@
 import { NextResponse } from "next/server";
-import { acknowledge, triggerTick } from "@/lib/status-monitor";
 
-export async function POST(request: Request) {
-  try {
-    const { sessionName } = await request.json();
-    if (!sessionName) {
-      return NextResponse.json(
-        { error: "sessionName is required" },
-        { status: 400 }
-      );
-    }
-
-    acknowledge(sessionName);
-    triggerTick();
-    return NextResponse.json({ ok: true });
-  } catch (error) {
-    console.error("Error acknowledging session:", error);
-    return NextResponse.json(
-      { error: "Failed to acknowledge session" },
-      { status: 500 }
-    );
-  }
+export async function POST() {
+  // With JSONL-based detection, acknowledge is a no-op.
+  // Status is determined by file content, not by a flag.
+  // The endpoint exists for API compatibility.
+  return NextResponse.json({ ok: true });
 }

@@ -1,19 +1,21 @@
 /**
- * Consolidated session status monitor.
+ * Session status monitor — JSONL-based detection.
  *
- * Single module that handles all tmux session status detection and
- * pushes updates to clients via WebSocket. Replaces the old split
- * between status-detector.ts (detection) and status-monitor.ts (loop).
+ * Determines session state by reading the tail of Claude Code's JSONL
+ * transcript files instead of scraping terminal content.
  *
- * Resource usage per tick:
- * - 1x exec("tmux list-sessions")  — always
- * - Nx exec("tmux capture-pane")   — only for sessions whose activity changed
- * - claudeSessionId lookups        — cached with 30s TTL
+ * Detection criteria:
+ * - RUNNING:  JSONL mtime changed in last 10s AND last entry is not turn_duration
+ * - WAITING:  Last entry is assistant/tool_use with no subsequent tool_result
+ *             (Claude requested a tool, user hasn't approved)
+ * - IDLE:     Last entry is system/turn_duration (turn finished)
+ *             OR file hasn't changed in >10s with no active indicators
+ * - DEAD:     tmux session doesn't exist
  *
- * Adaptive interval:
- * - 1s when any session is running/waiting
- * - 3s when all sessions are idle
- * - Paused when no managed sessions exist
+ * Resource usage:
+ * - 1x exec("tmux list-sessions") per tick (3s fallback)
+ * - fs.read of last 16KB per JSONL file — only when Chokidar fires
+ * - Zero tmux capture-pane, zero terminal pattern matching
  */
 
 import { exec } from "child_process";
@@ -34,179 +36,45 @@ const execAsync = promisify(exec);
 
 // --- Configuration ---
 
-const INTERVAL_ACTIVE_MS = 1000;
-const INTERVAL_IDLE_MS = 3000;
-const COOLDOWN_MS = 2000;
-const SPIKE_WINDOW_MS = 1000;
-const SPIKE_THRESHOLD = 2;
-const CLAUDE_ID_CACHE_TTL = 30000;
+const TICK_INTERVAL_MS = 3000;
+const RUNNING_THRESHOLD_MS = 10_000;
+const CLAUDE_ID_CACHE_TTL = 60_000;
+const JSONL_READ_SIZE = 16384; // 16KB tail read
 
 const UUID_PATTERN = getManagedSessionPattern();
+const CLAUDE_DIR =
+  process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
 
-// --- Pattern matching ---
-
-const BUSY_INDICATORS = [
-  "esc to interrupt",
-  "(esc to interrupt)",
-  "\u00b7 esc to interrupt",
-];
-
-const SPINNER_CHARS = [
-  "\u280b",
-  "\u2819",
-  "\u2839",
-  "\u2838",
-  "\u283c",
-  "\u2834",
-  "\u2826",
-  "\u2827",
-  "\u2807",
-  "\u280f",
-];
-
-const WHIMSICAL_WORDS = [
-  "accomplishing",
-  "actioning",
-  "actualizing",
-  "baking",
-  "booping",
-  "brewing",
-  "calculating",
-  "cerebrating",
-  "channelling",
-  "churning",
-  "clauding",
-  "coalescing",
-  "cogitating",
-  "combobulating",
-  "computing",
-  "concocting",
-  "conjuring",
-  "considering",
-  "contemplating",
-  "cooking",
-  "crafting",
-  "creating",
-  "crunching",
-  "deciphering",
-  "deliberating",
-  "determining",
-  "discombobulating",
-  "divining",
-  "doing",
-  "effecting",
-  "elucidating",
-  "enchanting",
-  "envisioning",
-  "finagling",
-  "flibbertigibbeting",
-  "forging",
-  "forming",
-  "frolicking",
-  "generating",
-  "germinating",
-  "hatching",
-  "herding",
-  "honking",
-  "hustling",
-  "ideating",
-  "imagining",
-  "incubating",
-  "inferring",
-  "jiving",
-  "manifesting",
-  "marinating",
-  "meandering",
-  "moseying",
-  "mulling",
-  "mustering",
-  "musing",
-  "noodling",
-  "percolating",
-  "perusing",
-  "philosophising",
-  "pondering",
-  "pontificating",
-  "processing",
-  "puttering",
-  "puzzling",
-  "reticulating",
-  "ruminating",
-  "scheming",
-  "schlepping",
-  "shimmying",
-  "shucking",
-  "simmering",
-  "smooshing",
-  "spelunking",
-  "spinning",
-  "stewing",
-  "sussing",
-  "synthesizing",
-  "thinking",
-  "tinkering",
-  "transmuting",
-  "unfurling",
-  "unravelling",
-  "vibing",
-  "wandering",
-  "whirring",
-  "wibbling",
-  "wizarding",
-  "working",
-  "wrangling",
-];
-
-const WAITING_PATTERNS = [
-  /\[Y\/n\]/i,
-  /\[y\/N\]/i,
-  /Allow\?/i,
-  /Approve\?/i,
-  /Continue\?/i,
-  /Press Enter to/i,
-  /waiting for input/i,
-  /\(yes\/no\)/i,
-  /Do you want to/i,
-  /Enter to confirm.*Esc to cancel/i,
-  />\s*1\.\s*Yes/,
-  /Yes, allow all/i,
-  /allow all edits/i,
-  /allow all commands/i,
-];
-
-function checkBusyIndicators(content: string): boolean {
-  const lines = content.split("\n");
-  const recent = lines.slice(-10).join("\n").toLowerCase();
-  if (BUSY_INDICATORS.some((ind) => recent.includes(ind))) return true;
-  if (
-    recent.includes("tokens") &&
-    WHIMSICAL_WORDS.some((w) => recent.includes(w))
-  )
-    return true;
-  const last5 = lines.slice(-5).join("");
-  return SPINNER_CHARS.some((s) => last5.includes(s));
-}
-
-function checkWaitingPatterns(content: string): boolean {
-  const recent = content.split("\n").slice(-5).join("\n");
-  return WAITING_PATTERNS.some((p) => p.test(recent));
-}
+// Entry types that are metadata, not conversation
+const METADATA_TYPES = new Set([
+  "file-history-snapshot",
+  "custom-title",
+  "permission-mode",
+]);
 
 // --- Types ---
 
 export type SessionStatus = "running" | "waiting" | "idle" | "dead";
 
+interface JsonlEntry {
+  type?: string;
+  subtype?: string;
+  message?: {
+    role?: string;
+    content?: Array<{ type?: string; name?: string; text?: string }> | string;
+  };
+}
+
 interface TrackedSession {
-  lastActivityTimestamp: number;
-  status: SessionStatus;
-  lastChangeTime: number;
-  acknowledged: boolean;
-  spikeWindowStart: number | null;
-  spikeChangeCount: number;
-  lastLine: string;
-  waitingContext?: string;
+  jsonlPath: string | null;
   claudeSessionId: string | null;
   claudeIdCachedAt: number;
+  cwdPath: string | null;
+  cwdCachedAt: number;
+  status: SessionStatus;
+  lastLine: string;
+  waitingContext?: string;
+  lastMtimeMs: number;
 }
 
 export interface SessionStatusSnapshot {
@@ -222,68 +90,158 @@ export interface SessionStatusSnapshot {
 
 const tracked = new Map<string, TrackedSession>();
 let currentSnapshot: Record<string, SessionStatusSnapshot> = {};
-let monitorTimer: ReturnType<typeof setTimeout> | null = null;
-let _currentInterval = INTERVAL_IDLE_MS;
+let monitorTimer: ReturnType<typeof setInterval> | null = null;
 
-// --- tmux helpers ---
+// --- JSONL reading (pure Node fs, zero exec) ---
 
-async function listTmuxSessions(): Promise<Map<string, number>> {
+async function readJsonlTail(
+  filePath: string
+): Promise<{ entries: JsonlEntry[]; mtimeMs: number } | null> {
+  let fd: fs.promises.FileHandle | null = null;
   try {
-    const { stdout } = await execAsync(
-      "tmux list-sessions -F '#{session_name}\t#{session_activity}' 2>/dev/null || echo \"\""
-    );
-    const map = new Map<string, number>();
-    for (const line of stdout.trim().split("\n")) {
-      if (!line) continue;
-      const tab = line.indexOf("\t");
-      if (tab === -1) continue;
-      const name = line.slice(0, tab);
-      const ts = parseInt(line.slice(tab + 1), 10) || 0;
-      map.set(name, ts);
+    fd = await fs.promises.open(filePath, "r");
+    const stat = await fd.stat();
+    const readSize = Math.min(stat.size, JSONL_READ_SIZE);
+    if (readSize === 0) return { entries: [], mtimeMs: stat.mtimeMs };
+
+    const buffer = Buffer.alloc(readSize);
+    await fd.read(buffer, 0, readSize, stat.size - readSize);
+
+    const text = buffer.toString("utf-8");
+    // First line may be partial (we started mid-line), skip it
+    const firstNewline = text.indexOf("\n");
+    const clean = firstNewline >= 0 ? text.slice(firstNewline + 1) : text;
+
+    const entries: JsonlEntry[] = [];
+    for (const line of clean.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        entries.push(JSON.parse(line));
+      } catch {
+        // skip malformed / partial lines
+      }
     }
-    return map;
+
+    return { entries, mtimeMs: stat.mtimeMs };
   } catch {
-    return new Map();
+    return null;
+  } finally {
+    await fd?.close();
   }
 }
 
-async function capturePaneLines(sessionName: string): Promise<string> {
+// --- Status determination ---
+
+function determineStatus(
+  entries: JsonlEntry[],
+  mtimeMs: number
+): { status: SessionStatus; lastLine: string; waitingContext?: string } {
+  const mtimeAge = Date.now() - mtimeMs;
+
+  // Filter to meaningful entries (skip metadata)
+  const meaningful = entries.filter((e) => !METADATA_TYPES.has(e.type || ""));
+  const last = meaningful[meaningful.length - 1];
+
+  if (!last) {
+    return { status: "idle", lastLine: "" };
+  }
+
+  // IDLE: turn finished (definitive signal)
+  if (last.type === "system" && last.subtype === "turn_duration") {
+    return { status: "idle", lastLine: findLastText(meaningful) };
+  }
+
+  // RUNNING: file recently modified and turn hasn't finished
+  if (mtimeAge < RUNNING_THRESHOLD_MS) {
+    return { status: "running", lastLine: findLastText(meaningful) };
+  }
+
+  // WAITING: last assistant entry has tool_use without a following tool_result
+  if (last.message?.role === "assistant") {
+    const content = last.message?.content;
+    if (Array.isArray(content)) {
+      const toolUse = content.find((c) => c.type === "tool_use");
+      if (toolUse) {
+        const toolName = toolUse.name || "unknown tool";
+        return {
+          status: "waiting",
+          lastLine: `Waiting for approval: ${toolName}`,
+          waitingContext: `Permission requested for ${toolName}`,
+        };
+      }
+    }
+  }
+
+  // Default: idle
+  return { status: "idle", lastLine: findLastText(meaningful) };
+}
+
+function findLastText(entries: JsonlEntry[]): string {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const content = entries[i].message?.content;
+    if (!Array.isArray(content)) continue;
+    for (let j = content.length - 1; j >= 0; j--) {
+      if (content[j].type === "text" && content[j].text) {
+        return content[j].text!.slice(0, 200);
+      }
+    }
+  }
+  return "";
+}
+
+// --- JSONL path resolution ---
+
+function findJsonlPath(
+  claudeSessionId: string,
+  cwdPath: string | null
+): string | null {
+  if (!claudeSessionId) return null;
+
+  // Try cwd-based path first
+  if (cwdPath) {
+    const dirName = cwdPath.replace(/\//g, "-");
+    const candidate = path.join(
+      CLAUDE_DIR,
+      "projects",
+      dirName,
+      `${claudeSessionId}.jsonl`
+    );
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  // Fallback: search all project directories
+  const projectsDir = path.join(CLAUDE_DIR, "projects");
+  try {
+    for (const dir of fs.readdirSync(projectsDir, { withFileTypes: true })) {
+      if (!dir.isDirectory()) continue;
+      const candidate = path.join(
+        projectsDir,
+        dir.name,
+        `${claudeSessionId}.jsonl`
+      );
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
+async function resolveCwd(sessionName: string): Promise<string | null> {
   try {
     const { stdout } = await execAsync(
-      `tmux capture-pane -t "${sessionName}" -p -S -5 2>/dev/null || echo ""`
+      `tmux display-message -t "${sessionName}" -p "#{pane_current_path}" 2>/dev/null || echo ""`
     );
-    return stdout.trim();
+    return stdout.trim() || null;
   } catch {
-    return "";
+    return null;
   }
 }
-
-function extractLastLines(content: string): {
-  lastLine: string;
-  waitingContext?: string;
-} {
-  const lines = content.split("\n").filter(Boolean);
-  const lastLine = lines[lines.length - 1] || "";
-  const waitingContext =
-    lines.length > 1 ? lines.slice(-3).join("\n") : undefined;
-  return { lastLine, waitingContext };
-}
-
-// --- Claude session ID resolution ---
 
 async function resolveClaudeSessionId(
-  session: TrackedSession,
   sessionName: string
 ): Promise<string | null> {
-  if (
-    session.claudeSessionId &&
-    Date.now() - session.claudeIdCachedAt < CLAUDE_ID_CACHE_TTL
-  ) {
-    return session.claudeSessionId;
-  }
-
-  let id: string | null = null;
-
   try {
     const { stdout } = await execAsync(
       `tmux show-environment -t "${sessionName}" CLAUDE_SESSION_ID 2>/dev/null || echo ""`
@@ -291,294 +249,188 @@ async function resolveClaudeSessionId(
     const line = stdout.trim();
     if (line.startsWith("CLAUDE_SESSION_ID=")) {
       const val = line.replace("CLAUDE_SESSION_ID=", "");
-      if (val && val !== "null") id = val;
+      if (val && val !== "null") return val;
     }
   } catch {
     // ignore
   }
-
-  if (!id) {
-    try {
-      const { stdout } = await execAsync(
-        `tmux display-message -t "${sessionName}" -p "#{pane_current_path}" 2>/dev/null || echo ""`
-      );
-      const cwd = stdout.trim();
-      if (cwd) id = findClaudeSessionInFiles(cwd);
-    } catch {
-      // ignore
-    }
-  }
-
-  session.claudeSessionId = id;
-  session.claudeIdCachedAt = Date.now();
-  return id;
+  return null;
 }
 
-function findClaudeSessionInFiles(projectPath: string): string | null {
-  const claudeDir =
-    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
-  const dirName = projectPath.replace(/\//g, "-");
-  const dir = path.join(claudeDir, "projects", dirName);
-  if (!fs.existsSync(dir)) return null;
+// --- tmux ---
 
-  const uuidRe =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/;
+async function listTmuxSessions(): Promise<Set<string>> {
   try {
-    let best: string | null = null;
-    let bestTime = 0;
-    for (const file of fs.readdirSync(dir)) {
-      if (file.startsWith("agent-") || !uuidRe.test(file)) continue;
-      const stat = fs.statSync(path.join(dir, file));
-      if (stat.mtimeMs > bestTime) {
-        bestTime = stat.mtimeMs;
-        best = file.replace(".jsonl", "");
-      }
-    }
-    return best && Date.now() - bestTime < 5 * 60 * 1000 ? best : null;
+    const { stdout } = await execAsync(
+      "tmux list-sessions -F '#{session_name}' 2>/dev/null || echo \"\""
+    );
+    return new Set(stdout.trim().split("\n").filter(Boolean));
   } catch {
-    return null;
+    return new Set();
   }
 }
 
-// --- Status detection logic ---
+// --- Session lifecycle ---
 
-function needsCapture(session: TrackedSession, newTimestamp: number): boolean {
-  // Always capture if timestamp changed (new activity)
-  if (session.lastActivityTimestamp !== newTimestamp) return true;
-  // Capture during cooldown (status might transition)
-  if (Date.now() - session.lastChangeTime < COOLDOWN_MS) return true;
-  // Capture during spike window
-  if (
-    session.spikeWindowStart !== null &&
-    Date.now() - session.spikeWindowStart < SPIKE_WINDOW_MS
-  )
-    return true;
-  return false;
-}
-
-function determineStatus(
+async function resolveSessionMapping(
   session: TrackedSession,
-  newTimestamp: number,
-  content: string | null
-): SessionStatus {
+  sessionName: string
+): Promise<void> {
   const now = Date.now();
 
-  // If we have fresh content, check patterns
-  if (content !== null) {
-    if (checkBusyIndicators(content)) {
-      session.lastChangeTime = now;
-      session.acknowledged = false;
-      return "running";
-    }
-    if (checkWaitingPatterns(content)) return "waiting";
-  }
-
-  // Spike detection
-  const tsChanged = session.lastActivityTimestamp !== newTimestamp;
-  if (tsChanged) {
-    session.lastActivityTimestamp = newTimestamp;
-
-    const windowExpired =
-      session.spikeWindowStart === null ||
-      now - session.spikeWindowStart > SPIKE_WINDOW_MS;
-
-    if (windowExpired) {
-      session.spikeWindowStart = now;
-      session.spikeChangeCount = 1;
-    } else {
-      session.spikeChangeCount++;
-      if (session.spikeChangeCount >= SPIKE_THRESHOLD) {
-        session.lastChangeTime = now;
-        session.acknowledged = false;
-        session.spikeWindowStart = null;
-        session.spikeChangeCount = 0;
-        return "running";
-      }
-    }
-  } else if (
-    session.spikeChangeCount === 1 &&
-    session.spikeWindowStart !== null &&
-    now - session.spikeWindowStart > SPIKE_WINDOW_MS
-  ) {
-    session.spikeWindowStart = null;
-    session.spikeChangeCount = 0;
-  }
-
-  // During spike window, hold stable
   if (
-    session.spikeWindowStart !== null &&
-    now - session.spikeWindowStart < SPIKE_WINDOW_MS
+    !session.claudeSessionId ||
+    now - session.claudeIdCachedAt > CLAUDE_ID_CACHE_TTL
   ) {
-    return now - session.lastChangeTime < COOLDOWN_MS
-      ? "running"
-      : session.acknowledged
-        ? "idle"
-        : "waiting";
+    session.claudeSessionId = await resolveClaudeSessionId(sessionName);
+    session.claudeIdCachedAt = now;
   }
 
-  // Cooldown
-  if (now - session.lastChangeTime < COOLDOWN_MS) return "running";
+  if (!session.cwdPath || now - session.cwdCachedAt > CLAUDE_ID_CACHE_TTL) {
+    session.cwdPath = await resolveCwd(sessionName);
+    session.cwdCachedAt = now;
+  }
 
-  return session.acknowledged ? "idle" : "waiting";
+  if (!session.jsonlPath && session.claudeSessionId) {
+    session.jsonlPath = findJsonlPath(session.claudeSessionId, session.cwdPath);
+  }
+}
+
+async function evaluateSession(session: TrackedSession): Promise<void> {
+  if (!session.jsonlPath) {
+    session.status = "idle";
+    session.lastLine = "";
+    session.waitingContext = undefined;
+    return;
+  }
+
+  const result = await readJsonlTail(session.jsonlPath);
+  if (!result) {
+    session.status = "idle";
+    session.lastLine = "";
+    session.waitingContext = undefined;
+    return;
+  }
+
+  session.lastMtimeMs = result.mtimeMs;
+  const { status, lastLine, waitingContext } = determineStatus(
+    result.entries,
+    result.mtimeMs
+  );
+  session.status = status;
+  session.lastLine = lastLine;
+  session.waitingContext = waitingContext;
+}
+
+function createTrackedSession(): TrackedSession {
+  return {
+    jsonlPath: null,
+    claudeSessionId: null,
+    claudeIdCachedAt: 0,
+    cwdPath: null,
+    cwdCachedAt: 0,
+    status: "idle",
+    lastLine: "",
+    lastMtimeMs: 0,
+  };
 }
 
 // --- Core tick ---
 
-async function tick(): Promise<void> {
-  const tmux = await listTmuxSessions();
-  const managed = [...tmux.entries()].filter(([name]) =>
-    UUID_PATTERN.test(name)
-  );
+function buildSnapshot(): Record<string, SessionStatusSnapshot> {
+  const snap: Record<string, SessionStatusSnapshot> = {};
+  for (const [name, session] of tracked) {
+    const id = getSessionIdFromName(name);
+    const agentType = getProviderIdFromSessionName(name) || "claude";
+    snap[id] = {
+      sessionName: name,
+      status: session.status,
+      lastLine: session.lastLine,
+      ...(session.status === "waiting" && session.waitingContext
+        ? { waitingContext: session.waitingContext }
+        : {}),
+      claudeSessionId: session.claudeSessionId,
+      agentType,
+    };
+  }
+  return snap;
+}
 
-  if (managed.length === 0) {
-    // No sessions — clear state and broadcast empty if needed
-    if (Object.keys(currentSnapshot).length > 0) {
-      currentSnapshot = {};
-      tracked.clear();
-      broadcast({ type: "session-statuses", statuses: {} });
+function snapshotChanged(
+  prev: Record<string, SessionStatusSnapshot>,
+  next: Record<string, SessionStatusSnapshot>
+): boolean {
+  const prevKeys = Object.keys(prev);
+  const nextKeys = Object.keys(next);
+  if (prevKeys.length !== nextKeys.length) return true;
+  for (const id of nextKeys) {
+    const p = prev[id];
+    const n = next[id];
+    if (!p || p.status !== n.status || p.lastLine !== n.lastLine) return true;
+  }
+  return false;
+}
+
+function updateDb(
+  prev: Record<string, SessionStatusSnapshot>,
+  next: Record<string, SessionStatusSnapshot>
+): void {
+  try {
+    const db = getDb();
+    for (const [id, snap] of Object.entries(next)) {
+      if (prev[id]?.status === snap.status) continue;
+      db.prepare(
+        "UPDATE sessions SET updated_at = datetime('now') WHERE id = ?"
+      ).run(id);
+      if (snap.claudeSessionId) {
+        db.prepare(
+          "UPDATE sessions SET claude_session_id = ? WHERE id = ? AND (claude_session_id IS NULL OR claude_session_id != ?)"
+        ).run(snap.claudeSessionId, id, snap.claudeSessionId);
+      }
     }
-    scheduleNext(INTERVAL_IDLE_MS);
+  } catch {
+    // DB errors shouldn't break the monitor
+  }
+}
+
+async function tick(): Promise<void> {
+  const tmuxSessions = await listTmuxSessions();
+  const managedNames = [...tmuxSessions].filter((s) => UUID_PATTERN.test(s));
+
+  // Clear if no sessions
+  if (managedNames.length === 0 && Object.keys(currentSnapshot).length > 0) {
+    currentSnapshot = {};
+    tracked.clear();
+    broadcast({ type: "session-statuses", statuses: {} });
     return;
   }
 
-  let hasChanges = false;
-  let hasActive = false;
-  const newSnapshot: Record<string, SessionStatusSnapshot> = {};
-  const dbUpdates: Array<{ id: string; claudeSessionId: string | null }> = [];
+  // Ensure all managed sessions are tracked
+  for (const name of managedNames) {
+    if (!tracked.has(name)) tracked.set(name, createTrackedSession());
+  }
 
-  // Process sessions in parallel
-  const results = await Promise.all(
-    managed.map(async ([sessionName, activityTs]) => {
-      const id = getSessionIdFromName(sessionName);
-      const agentType = getProviderIdFromSessionName(sessionName) || "claude";
+  // Clean up dead sessions
+  for (const [name] of tracked) {
+    if (!tmuxSessions.has(name)) tracked.delete(name);
+  }
 
-      // Get or create tracker
-      let session = tracked.get(sessionName);
-      if (!session) {
-        session = {
-          lastActivityTimestamp: activityTs,
-          status: "idle",
-          lastChangeTime: 0,
-          acknowledged: true,
-          spikeWindowStart: null,
-          spikeChangeCount: 0,
-          lastLine: "",
-          claudeSessionId: null,
-          claudeIdCachedAt: 0,
-        };
-        tracked.set(sessionName, session);
-      }
-
-      // Only capture pane if activity changed or in transition
-      let content: string | null = null;
-      if (needsCapture(session, activityTs)) {
-        content = await capturePaneLines(sessionName);
-        const { lastLine, waitingContext } = extractLastLines(content);
-        session.lastLine = lastLine;
-        session.waitingContext = waitingContext;
-      }
-
-      const status = determineStatus(session, activityTs, content);
-      const prevStatus = session.status;
-      session.status = status;
-
-      // Resolve claude session ID (cached)
-      const claudeSessionId = await resolveClaudeSessionId(
-        session,
-        sessionName
-      );
-
-      return {
-        id,
-        sessionName,
-        agentType,
-        status,
-        prevStatus,
-        claudeSessionId,
-      };
+  // Resolve and evaluate all sessions in parallel
+  await Promise.all(
+    managedNames.map(async (name) => {
+      const session = tracked.get(name)!;
+      await resolveSessionMapping(session, name);
+      await evaluateSession(session);
     })
   );
 
-  for (const {
-    id,
-    sessionName,
-    agentType,
-    status,
-    prevStatus,
-    claudeSessionId,
-  } of results) {
-    const session = tracked.get(sessionName)!;
+  const newSnapshot = buildSnapshot();
 
-    const snap: SessionStatusSnapshot = {
-      sessionName,
-      status,
-      lastLine: session.lastLine,
-      ...(status === "waiting" && session.waitingContext
-        ? { waitingContext: session.waitingContext }
-        : {}),
-      claudeSessionId,
-      agentType,
-    };
-    newSnapshot[id] = snap;
-
-    // Track if anything changed for broadcast
-    const prev = currentSnapshot[id];
-    if (!prev || prev.status !== status || prev.lastLine !== session.lastLine) {
-      hasChanges = true;
-    }
-
-    if (status === "running" || status === "waiting") hasActive = true;
-
-    // DB update only on status change
-    if (prevStatus !== status) {
-      dbUpdates.push({ id, claudeSessionId });
-    }
-  }
-
-  // Check for disappeared sessions
-  for (const id of Object.keys(currentSnapshot)) {
-    if (!(id in newSnapshot)) hasChanges = true;
-  }
-
-  // Clean up trackers for dead sessions
-  for (const [name] of tracked) {
-    if (!tmux.has(name)) tracked.delete(name);
-  }
-
-  currentSnapshot = newSnapshot;
-
-  // DB writes (only on actual changes)
-  if (dbUpdates.length > 0) {
-    try {
-      const db = getDb();
-      for (const { id, claudeSessionId } of dbUpdates) {
-        db.prepare(
-          "UPDATE sessions SET updated_at = datetime('now') WHERE id = ?"
-        ).run(id);
-        if (claudeSessionId) {
-          db.prepare(
-            "UPDATE sessions SET claude_session_id = ? WHERE id = ? AND (claude_session_id IS NULL OR claude_session_id != ?)"
-          ).run(claudeSessionId, id, claudeSessionId);
-        }
-      }
-    } catch {
-      // DB errors shouldn't break the monitor
-    }
-  }
-
-  if (hasChanges) {
+  if (snapshotChanged(currentSnapshot, newSnapshot)) {
+    updateDb(currentSnapshot, newSnapshot);
+    currentSnapshot = newSnapshot;
     broadcast({ type: "session-statuses", statuses: newSnapshot });
   }
-
-  scheduleNext(hasActive ? INTERVAL_ACTIVE_MS : INTERVAL_IDLE_MS);
-}
-
-function scheduleNext(interval: number): void {
-  _currentInterval = interval;
-  if (monitorTimer) clearTimeout(monitorTimer);
-  monitorTimer = setTimeout(() => {
-    tick().catch(console.error);
-  }, interval);
 }
 
 // --- Public API ---
@@ -588,25 +440,48 @@ export function getStatusSnapshot(): Record<string, SessionStatusSnapshot> {
 }
 
 export function acknowledge(sessionName: string): void {
-  const session = tracked.get(sessionName);
-  if (session) session.acknowledged = true;
+  // With JSONL-based detection, acknowledge is a no-op — status is
+  // determined by file content, not by an acknowledged flag.
+  void sessionName;
 }
 
-/** Trigger an immediate tick (e.g., when JSONL watcher detects a change) */
-export function triggerTick(): void {
-  if (monitorTimer) clearTimeout(monitorTimer);
+/** Called by Chokidar when a JSONL file changes — evaluates instantly. */
+export function onJsonlChange(filePath: string): void {
+  for (const [, session] of tracked) {
+    if (session.jsonlPath === filePath) {
+      evaluateSession(session)
+        .then(() => {
+          const newSnapshot = buildSnapshot();
+          if (snapshotChanged(currentSnapshot, newSnapshot)) {
+            updateDb(currentSnapshot, newSnapshot);
+            currentSnapshot = newSnapshot;
+            broadcast({ type: "session-statuses", statuses: newSnapshot });
+          }
+        })
+        .catch(console.error);
+      return;
+    }
+  }
+
+  // Unknown file — might be a new session, trigger full tick
   tick().catch(console.error);
 }
 
 export function startStatusMonitor(): void {
   if (monitorTimer) return;
+
   setTimeout(() => tick().catch(console.error), 500);
-  console.log("> Status monitor started (adaptive 1-3s push)");
+
+  monitorTimer = setInterval(() => {
+    tick().catch(console.error);
+  }, TICK_INTERVAL_MS);
+
+  console.log("> Status monitor started (JSONL-based, 3s fallback tick)");
 }
 
 export function stopStatusMonitor(): void {
   if (monitorTimer) {
-    clearTimeout(monitorTimer);
+    clearInterval(monitorTimer);
     monitorTimer = null;
   }
 }

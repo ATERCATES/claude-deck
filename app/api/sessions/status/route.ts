@@ -19,6 +19,7 @@ interface SessionStatusResponse {
   sessionName: string;
   status: SessionStatus;
   lastLine?: string;
+  waitingContext?: string;
   claudeSessionId?: string | null;
   agentType?: AgentType;
 }
@@ -135,15 +136,20 @@ async function getClaudeSessionId(sessionName: string): Promise<string | null> {
   return null;
 }
 
-async function getLastLine(sessionName: string): Promise<string> {
+async function getLastLines(
+  sessionName: string
+): Promise<{ lastLine: string; waitingContext?: string }> {
   try {
     const { stdout } = await execAsync(
       `tmux capture-pane -t "${sessionName}" -p -S -5 2>/dev/null || echo ""`
     );
     const lines = stdout.trim().split("\n").filter(Boolean);
-    return lines.pop() || "";
+    const lastLine = lines[lines.length - 1] || "";
+    const waitingContext =
+      lines.length > 1 ? lines.slice(-3).join("\n") : undefined;
+    return { lastLine, waitingContext };
   } catch {
-    return "";
+    return { lastLine: "" };
   }
 }
 
@@ -172,15 +178,23 @@ export async function GET() {
 
     // Process all sessions in parallel for speed
     const sessionPromises = managedSessions.map(async (sessionName) => {
-      const [status, claudeSessionId, lastLine] = await Promise.all([
+      const [status, claudeSessionId, lastLines] = await Promise.all([
         statusDetector.getStatus(sessionName),
         getClaudeSessionId(sessionName),
-        getLastLine(sessionName),
+        getLastLines(sessionName),
       ]);
       const id = getSessionIdFromName(sessionName);
       const agentType = getAgentTypeFromSessionName(sessionName);
 
-      return { sessionName, id, status, claudeSessionId, lastLine, agentType };
+      return {
+        sessionName,
+        id,
+        status,
+        claudeSessionId,
+        lastLine: lastLines.lastLine,
+        waitingContext: lastLines.waitingContext,
+        agentType,
+      };
     });
 
     const results = await Promise.all(sessionPromises);
@@ -191,6 +205,7 @@ export async function GET() {
       status,
       claudeSessionId,
       lastLine,
+      waitingContext,
       agentType,
     } of results) {
       // Track status changes - update DB when session becomes active
@@ -206,6 +221,7 @@ export async function GET() {
         sessionName,
         status,
         lastLine,
+        ...(status === "waiting" && waitingContext ? { waitingContext } : {}),
         claudeSessionId,
         agentType,
       };

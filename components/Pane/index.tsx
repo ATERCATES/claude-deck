@@ -43,10 +43,13 @@ const GitPanel = dynamic(
   { ssr: false, loading: () => <GitPanelSkeleton /> }
 );
 
+import type { SessionStatus } from "@/components/views/types";
+
 interface PaneProps {
   paneId: string;
   sessions: Session[];
   projects: Project[];
+  sessionStatuses?: Record<string, SessionStatus>;
   onRegisterTerminal: (
     paneId: string,
     tabId: string,
@@ -68,6 +71,7 @@ export const Pane = memo(function Pane({
   paneId,
   sessions,
   projects,
+  sessionStatuses,
   onRegisterTerminal,
   onMenuClick,
   onSelectSession,
@@ -318,6 +322,7 @@ export const Pane = memo(function Pane({
           activeTabId={paneData.activeTabId}
           session={session}
           sessions={sessions}
+          sessionStatuses={sessionStatuses}
           viewMode={viewMode}
           isFocused={isFocused}
           isConductor={isConductor}

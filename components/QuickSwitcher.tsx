@@ -14,6 +14,7 @@ import { CodeSearchResults } from "@/components/CodeSearch/CodeSearchResults";
 import { useRipgrepAvailable } from "@/data/code-search";
 import { useClaudeProjectsQuery, useClaudeSessionsQuery } from "@/data/claude";
 import type { ClaudeProject } from "@/data/claude";
+import type { SessionStatus } from "@/components/views/types";
 
 interface QuickSwitcherProps {
   open: boolean;
@@ -27,6 +28,7 @@ interface QuickSwitcherProps {
   onSelectFile?: (file: string, line: number) => void;
   currentSessionId?: string;
   activeSessionWorkingDir?: string;
+  sessionStatuses?: Record<string, SessionStatus>;
 }
 
 interface FlatSession {
@@ -45,6 +47,7 @@ export function QuickSwitcher({
   onSelectFile,
   currentSessionId,
   activeSessionWorkingDir,
+  sessionStatuses,
 }: QuickSwitcherProps) {
   const [mode, setMode] = useState<"sessions" | "code">("sessions");
   const [query, setQuery] = useState("");
@@ -103,16 +106,46 @@ export function QuickSwitcher({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when .data changes, not entire query objects
   }, [s0.data, s1.data, s2.data, s3.data, topProjects]);
 
+  // Build a map of claudeSessionId -> status for quick lookup
+  const statusByClaudeId = useMemo(() => {
+    if (!sessionStatuses) return new Map<string, SessionStatus>();
+    const map = new Map<string, SessionStatus>();
+    for (const s of Object.values(sessionStatuses)) {
+      if (s.claudeSessionId) {
+        map.set(s.claudeSessionId, s);
+      }
+    }
+    return map;
+  }, [sessionStatuses]);
+
   const filteredSessions = useMemo(() => {
-    if (!query) return allSessions;
-    const q = query.toLowerCase();
-    return allSessions.filter(
-      (s) =>
-        s.summary.toLowerCase().includes(q) ||
-        s.projectDisplayName.toLowerCase().includes(q) ||
-        s.cwd.toLowerCase().includes(q)
-    );
-  }, [allSessions, query]);
+    let sessions = allSessions;
+    if (query) {
+      const q = query.toLowerCase();
+      sessions = sessions.filter(
+        (s) =>
+          s.summary.toLowerCase().includes(q) ||
+          s.projectDisplayName.toLowerCase().includes(q) ||
+          s.cwd.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort: waiting first, then running, then by time
+    return [...sessions].sort((a, b) => {
+      const statusA = statusByClaudeId.get(a.sessionId)?.status;
+      const statusB = statusByClaudeId.get(b.sessionId)?.status;
+      const orderMap: Record<string, number> = {
+        waiting: 0,
+        running: 1,
+      };
+      const orderA = statusA && statusA in orderMap ? orderMap[statusA] : 2;
+      const orderB = statusB && statusB in orderMap ? orderMap[statusB] : 2;
+      if (orderA !== orderB) return orderA - orderB;
+      return (
+        new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
+      );
+    });
+  }, [allSessions, query, statusByClaudeId]);
 
   useEffect(() => {
     if (open) {
@@ -242,6 +275,7 @@ export function QuickSwitcher({
             ) : (
               filteredSessions.map((session, index) => {
                 const isCurrent = session.sessionId === currentSessionId;
+                const status = statusByClaudeId.get(session.sessionId);
                 return (
                   <button
                     key={session.sessionId}
@@ -259,11 +293,24 @@ export function QuickSwitcher({
                       index === selectedIndex
                         ? "bg-accent"
                         : "hover:bg-accent/50",
-                      isCurrent && "bg-primary/10"
+                      isCurrent && "bg-primary/10",
+                      status?.status === "waiting" && "bg-amber-500/5"
                     )}
                   >
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-emerald-500/20 text-emerald-400">
+                    <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-emerald-500/20 text-emerald-400">
                       <Terminal className="h-4 w-4" />
+                      {status && (
+                        <span
+                          className={cn(
+                            "border-background absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2",
+                            status.status === "running" &&
+                              "animate-pulse bg-green-500",
+                            status.status === "waiting" &&
+                              "animate-pulse bg-amber-500",
+                            status.status === "idle" && "bg-gray-400"
+                          )}
+                        />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">
@@ -272,6 +319,11 @@ export function QuickSwitcher({
                       <span className="text-muted-foreground block truncate text-xs">
                         {session.projectDisplayName}
                       </span>
+                      {status?.lastLine && (
+                        <span className="text-muted-foreground block truncate font-mono text-[10px]">
+                          {status.lastLine}
+                        </span>
+                      )}
                     </div>
                     <div className="text-muted-foreground flex flex-shrink-0 items-center gap-1 text-xs">
                       <Clock className="h-3 w-3" />

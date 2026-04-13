@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { ClaudeProjectsSection } from "@/components/ClaudeProjects";
+import { ActiveSessionsSection } from "./ActiveSessionsSection";
 import { NewProjectDialog } from "@/components/Projects";
 import { FolderPicker } from "@/components/FolderPicker";
 import { SelectionToolbar } from "./SelectionToolbar";
@@ -24,7 +25,7 @@ export type { SessionListProps } from "./SessionList.types";
 
 export function SessionList({
   activeSessionId: _activeSessionId,
-  sessionStatuses: _sessionStatuses,
+  sessionStatuses,
   onSelect,
   onOpenInTab: _onOpenInTab,
   onNewSessionInProject: _onNewSessionInProject,
@@ -135,6 +136,13 @@ export function SessionList({
                 Retry
               </Button>
             </div>
+          )}
+
+          {!isInitialLoading && !hasError && sessionStatuses && (
+            <ActiveSessionsSection
+              sessionStatuses={sessionStatuses}
+              onSelect={onSelect}
+            />
           )}
 
           {!isInitialLoading && !hasError && (

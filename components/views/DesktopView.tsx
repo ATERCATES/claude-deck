@@ -15,6 +15,8 @@ import {
   Command,
 } from "lucide-react";
 import { PaneLayout } from "@/components/PaneLayout";
+import { SessionStatusBar } from "@/components/SessionStatusBar";
+import { WaitingBanner } from "@/components/WaitingBanner";
 import {
   Tooltip,
   TooltipContent,
@@ -46,6 +48,7 @@ export function DesktopView({
   updateSettings,
   requestPermission,
   attachToSession,
+  attachToActiveTmux,
   openSessionInNewTab,
   handleNewSessionInProject,
   handleOpenTerminal,
@@ -59,6 +62,20 @@ export function DesktopView({
   resumeClaudeSession,
   renderPane,
 }: ViewProps) {
+  // Select a session by ID — handles both DB sessions and tmux-only sessions
+  const selectSessionById = (id: string) => {
+    const session = sessions.find((s) => s.id === id);
+    if (session) {
+      attachToSession(session);
+      return;
+    }
+    // Not in DB — attach directly to the running tmux session
+    const status = sessionStatuses[id];
+    if (status?.sessionName) {
+      attachToActiveTmux(id, status.sessionName);
+    }
+  };
+
   return (
     <div className="bg-background flex h-screen overflow-hidden">
       {/* Desktop Sidebar */}
@@ -71,10 +88,7 @@ export function DesktopView({
             <SessionList
               activeSessionId={focusedActiveTab?.sessionId || undefined}
               sessionStatuses={sessionStatuses}
-              onSelect={(id) => {
-                const session = sessions.find((s) => s.id === id);
-                if (session) attachToSession(session);
-              }}
+              onSelect={selectSessionById}
               onOpenInTab={(id) => {
                 const session = sessions.find((s) => s.id === id);
                 if (session) openSessionInNewTab(session);
@@ -191,10 +205,7 @@ export function DesktopView({
                 .map((s) => ({ id: s.id, name: s.name }))}
               onUpdateSettings={updateSettings}
               onRequestPermission={requestPermission}
-              onSelectSession={(id) => {
-                const session = sessions.find((s) => s.id === id);
-                if (session) attachToSession(session);
-              }}
+              onSelectSession={selectSessionById}
             />
             <Button size="sm" onClick={() => newClaudeSession()}>
               <Plus className="mr-1 h-4 w-4" />
@@ -203,10 +214,22 @@ export function DesktopView({
           </div>
         </header>
 
+        {/* Waiting Banner */}
+        <WaitingBanner
+          sessionStatuses={sessionStatuses}
+          onSelectSession={selectSessionById}
+        />
+
         {/* Pane Layout - full height */}
         <div className="min-h-0 flex-1">
           <PaneLayout renderPane={renderPane} />
         </div>
+
+        {/* Session Status Bar */}
+        <SessionStatusBar
+          sessionStatuses={sessionStatuses}
+          onSelectSession={selectSessionById}
+        />
       </div>
 
       {/* Dialogs */}
@@ -223,6 +246,7 @@ export function DesktopView({
         onOpenChange={setShowQuickSwitcher}
         currentSessionId={focusedActiveTab?.sessionId ?? undefined}
         activeSessionWorkingDir={activeSession?.working_directory ?? undefined}
+        sessionStatuses={sessionStatuses}
         onResumeClaudeSession={resumeClaudeSession}
         onSelectFile={(file, line) => {
           const absolutePath = activeSession?.working_directory

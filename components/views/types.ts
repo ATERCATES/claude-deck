@@ -7,6 +7,7 @@ export interface SessionStatus {
   sessionName: string;
   status: "idle" | "running" | "waiting" | "error" | "dead";
   lastLine?: string;
+  waitingContext?: string;
   claudeSessionId?: string | null;
 }
 
@@ -38,6 +39,7 @@ export interface ViewProps {
 
   // Handlers
   attachToSession: (session: Session) => void;
+  attachToActiveTmux: (sessionId: string, tmuxSessionName: string) => void;
   openSessionInNewTab: (session: Session) => void;
   handleNewSessionInProject: (projectId: string) => void;
   handleOpenTerminal: (projectId: string) => void;

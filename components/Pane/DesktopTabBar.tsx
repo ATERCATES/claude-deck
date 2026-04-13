@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { Session } from "@/lib/db";
+import type { SessionStatus } from "@/components/views/types";
 
 type ViewMode = "terminal" | "files" | "git" | "workers";
 
@@ -35,6 +36,7 @@ interface DesktopTabBarProps {
   activeTabId: string;
   session: Session | null | undefined;
   sessions: Session[];
+  sessionStatuses?: Record<string, SessionStatus>;
   viewMode: ViewMode;
   isFocused: boolean;
   isConductor: boolean;
@@ -63,6 +65,7 @@ export function DesktopTabBar({
   activeTabId,
   session,
   sessions,
+  sessionStatuses,
   viewMode,
   isFocused,
   isConductor,
@@ -103,34 +106,65 @@ export function DesktopTabBar({
     >
       {/* Tabs */}
       <div className="flex min-w-0 flex-1 items-center gap-0.5">
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            onClick={(e) => {
-              e.stopPropagation();
-              onTabSwitch(tab.id);
-            }}
-            className={cn(
-              "group flex cursor-pointer items-center gap-1.5 rounded-t-md px-3 py-1.5 text-xs transition-colors",
-              tab.id === activeTabId
-                ? "bg-background text-foreground"
-                : "text-muted-foreground hover:text-foreground/80 hover:bg-accent/50"
-            )}
-          >
-            <span className="max-w-[120px] truncate">{getTabName(tab)}</span>
-            {tabs.length > 1 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onTabClose(tab.id);
-                }}
-                className="hover:text-foreground ml-1 opacity-0 group-hover:opacity-100"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </div>
-        ))}
+        {tabs.map((tab) => {
+          const tabStatus = tab.sessionId
+            ? sessionStatuses?.[tab.sessionId]
+            : undefined;
+          return (
+            <Tooltip key={tab.id}>
+              <TooltipTrigger asChild>
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTabSwitch(tab.id);
+                  }}
+                  className={cn(
+                    "group relative flex cursor-pointer items-center gap-1.5 rounded-t-md px-3 py-1.5 text-xs transition-colors",
+                    tab.id === activeTabId
+                      ? "bg-background text-foreground"
+                      : "text-muted-foreground hover:text-foreground/80 hover:bg-accent/50"
+                  )}
+                >
+                  {tabStatus &&
+                    tab.id !== activeTabId &&
+                    (tabStatus.status === "running" ||
+                      tabStatus.status === "waiting") && (
+                      <span
+                        className={cn(
+                          "absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full",
+                          tabStatus.status === "running" &&
+                            "animate-pulse bg-green-500",
+                          tabStatus.status === "waiting" &&
+                            "animate-pulse bg-amber-500"
+                        )}
+                      />
+                    )}
+                  <span className="max-w-[120px] truncate">
+                    {getTabName(tab)}
+                  </span>
+                  {tabs.length > 1 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTabClose(tab.id);
+                      }}
+                      className="hover:text-foreground ml-1 opacity-0 group-hover:opacity-100"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </TooltipTrigger>
+              {tabStatus?.lastLine && tab.id !== activeTabId && (
+                <TooltipContent side="bottom" className="max-w-xs">
+                  <p className="truncate font-mono text-xs">
+                    {tabStatus.lastLine}
+                  </p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          );
+        })}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

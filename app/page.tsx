@@ -296,6 +296,37 @@ function HomeContent() {
     [addTab, focusedPaneId, buildSessionCommand, runSessionInTerminal]
   );
 
+  // Attach to an already-running tmux session (non-destructive)
+  const attachToActiveTmux = useCallback(
+    (sessionId: string, tmuxSessionName: string) => {
+      const terminalInfo = getTerminalWithFallback();
+      if (!terminalInfo) return;
+
+      const { terminal, paneId } = terminalInfo;
+      const activeTab = getActiveTab(paneId);
+      const isInTmux = !!activeTab?.attachedTmux;
+
+      if (isInTmux) {
+        terminal.sendInput("\x02d");
+      }
+
+      setTimeout(
+        () => {
+          terminal.sendInput("\x03");
+          setTimeout(() => {
+            terminal.sendCommand(
+              `tmux attach -t ${tmuxSessionName} 2>/dev/null`
+            );
+            attachSession(paneId, sessionId, tmuxSessionName);
+            terminal.focus();
+          }, 50);
+        },
+        isInTmux ? 100 : 0
+      );
+    },
+    [getTerminalWithFallback, getActiveTab, attachSession]
+  );
+
   const resumeClaudeSession = useCallback(
     (
       claudeSessionId: string,
@@ -464,6 +495,7 @@ function HomeContent() {
         paneId={paneId}
         sessions={sessions}
         projects={projects}
+        sessionStatuses={sessionStatuses}
         onRegisterTerminal={registerTerminalRef}
         onMenuClick={isMobile ? () => setSidebarOpen(true) : undefined}
         onSelectSession={handleSelectSession}
@@ -473,6 +505,7 @@ function HomeContent() {
     [
       sessions,
       projects,
+      sessionStatuses,
       registerTerminalRef,
       isMobile,
       handleSelectSession,
@@ -586,6 +619,7 @@ function HomeContent() {
     updateSettings,
     requestPermission,
     attachToSession,
+    attachToActiveTmux,
     openSessionInNewTab,
     handleNewSessionInProject,
     handleOpenTerminal,

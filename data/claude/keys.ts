@@ -3,4 +3,5 @@ export const claudeKeys = {
   projects: () => [...claudeKeys.all, "projects"] as const,
   sessions: (projectName: string) =>
     [...claudeKeys.all, "sessions", projectName] as const,
+  hiddenItems: () => [...claudeKeys.all, "hiddenItems"] as const,
 };

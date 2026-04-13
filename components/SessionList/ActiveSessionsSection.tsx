@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronRight, Activity, AlertCircle, Moon } from "lucide-react";
 import type { SessionStatus } from "@/components/views/types";
+import { useHiddenSessionIds } from "@/data/claude";
 
 interface ActiveSessionsSectionProps {
   sessionStatuses: Record<string, SessionStatus>;
@@ -20,19 +21,22 @@ export function ActiveSessionsSection({
   sessionStatuses,
   onSelect,
 }: ActiveSessionsSectionProps) {
+  const hiddenSessionIds = useHiddenSessionIds();
+
   const activeSessions = useMemo(() => {
     return Object.entries(sessionStatuses)
       .filter(
-        ([, s]) =>
-          s.status === "running" ||
-          s.status === "waiting" ||
-          s.status === "idle"
+        ([id, s]) =>
+          (s.status === "running" ||
+            s.status === "waiting" ||
+            s.status === "idle") &&
+          !hiddenSessionIds.has(id)
       )
       .map(([id, s]) => ({ id, ...s }))
       .sort(
         (a, b) => (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3)
       );
-  }, [sessionStatuses]);
+  }, [sessionStatuses, hiddenSessionIds]);
 
   const hasWaiting = activeSessions.some((s) => s.status === "waiting");
   const [expanded, setExpanded] = useState(hasWaiting);

@@ -67,6 +67,32 @@ export function useClaudeSessionsQuery(projectName: string | null) {
   });
 }
 
+interface HiddenItem {
+  item_type: "project" | "session";
+  item_id: string;
+}
+
+export function useHiddenSessionIds(): Set<string> {
+  const { data } = useQuery({
+    queryKey: claudeKeys.hiddenItems(),
+    queryFn: async () => {
+      const res = await fetch("/api/claude/hidden");
+      if (!res.ok) throw new Error("Failed to fetch hidden items");
+      const data = await res.json();
+      return (data.items as HiddenItem[]) || [];
+    },
+    staleTime: 30000,
+  });
+
+  const sessionIds = new Set<string>();
+  if (data) {
+    for (const item of data) {
+      if (item.item_type === "session") sessionIds.add(item.item_id);
+    }
+  }
+  return sessionIds;
+}
+
 export function useHideItem() {
   const queryClient = useQueryClient();
 

@@ -38,6 +38,7 @@ import { DesktopView } from "@/components/views/DesktopView";
 import { MobileView } from "@/components/views/MobileView";
 import { getPendingPrompt, clearPendingPrompt } from "@/stores/initialPrompt";
 import { NewClaudeSessionDialog } from "@/components/NewClaudeSessionDialog";
+import { useClaudeProjectsQuery } from "@/data/claude";
 
 function HomeContent() {
   // UI State
@@ -60,6 +61,7 @@ function HomeContent() {
   // Data hooks
   const { sessions, fetchSessions } = useSessions();
   const { projects, fetchProjects } = useProjects();
+  const { data: claudeProjects } = useClaudeProjectsQuery();
   const {
     startDevServerProjectId,
     setStartDevServerProjectId,
@@ -350,7 +352,7 @@ function HomeContent() {
   }, []);
 
   const handleNewClaudeSessionConfirm = useCallback(
-    (name: string) => {
+    (name: string, overrideCwd?: string, overrideProject?: string) => {
       if (!newSessionPending) return;
       setNewSessionPending(null);
 
@@ -362,7 +364,8 @@ function HomeContent() {
       const isInTmux = !!activeTab?.attachedTmux;
       const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
       const tmuxName = `claude-new-${id}`;
-      const { cwd, projectName } = newSessionPending;
+      const cwd = overrideCwd || newSessionPending.cwd;
+      const projectName = overrideProject || newSessionPending.projectName;
       const tmuxCmd = `tmux new -s ${tmuxName} -c "${cwd}" "claude"`;
 
       if (isInTmux) {
@@ -609,6 +612,7 @@ function HomeContent() {
       <NewClaudeSessionDialog
         open={!!newSessionPending}
         projectName={newSessionPending?.projectName || ""}
+        projects={claudeProjects}
         onClose={() => setNewSessionPending(null)}
         onConfirm={handleNewClaudeSessionConfirm}
       />

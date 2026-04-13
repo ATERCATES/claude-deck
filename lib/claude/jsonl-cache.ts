@@ -1,3 +1,4 @@
+import { listSessions as sdkListSessions } from "@anthropic-ai/claude-agent-sdk";
 import {
   extractProjectDirectory,
   getSessions,
@@ -28,18 +29,32 @@ let projectsBuilding: Promise<CachedProject[]> | null = null;
 
 async function buildProjects(): Promise<CachedProject[]> {
   const projectNames = getClaudeProjectNames();
+
+  const allSessions = await sdkListSessions();
+  const cwdToDir = new Map<string, string>();
+  for (const s of allSessions) {
+    if (s.cwd) {
+      const encoded = s.cwd.replace(/\//g, "-");
+      if (!cwdToDir.has(encoded)) cwdToDir.set(encoded, s.cwd);
+    }
+  }
+
   return Promise.all(
     projectNames.map(async (name) => {
-      const [directory, sessionData] = await Promise.all([
-        extractProjectDirectory(name),
-        getSessions(name, 1, 0),
-      ]);
+      const directory =
+        cwdToDir.get(name) || (await extractProjectDirectory(name));
+      const projectSessions = allSessions
+        .filter((s) => s.cwd === directory)
+        .sort((a, b) => b.lastModified - a.lastModified);
+
       return {
         name,
         directory,
         displayName: deriveDisplayName(directory, name),
-        sessionCount: sessionData.total,
-        lastActivity: sessionData.sessions[0]?.lastActivity || null,
+        sessionCount: projectSessions.length,
+        lastActivity: projectSessions[0]
+          ? new Date(projectSessions[0].lastModified).toISOString()
+          : null,
       };
     })
   );

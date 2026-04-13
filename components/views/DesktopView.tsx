@@ -196,7 +196,7 @@ export function DesktopView({
                 if (session) attachToSession(session);
               }}
             />
-            <Button size="sm" onClick={() => setShowNewSessionDialog(true)}>
+            <Button size="sm" onClick={() => newClaudeSession()}>
               <Plus className="mr-1 h-4 w-4" />
               New Session
             </Button>

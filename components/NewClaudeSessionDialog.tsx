@@ -9,7 +9,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Sparkles } from "lucide-react";
+import type { ClaudeProject } from "@/data/claude";
 
 const ADJECTIVES = [
   "swift",
@@ -45,33 +53,44 @@ function generateName() {
 interface NewClaudeSessionDialogProps {
   open: boolean;
   projectName: string;
+  projects?: ClaudeProject[];
   onClose: () => void;
-  onConfirm: (name: string) => void;
+  onConfirm: (name: string, cwd?: string, projectName?: string) => void;
 }
 
 export function NewClaudeSessionDialog({
   open,
   projectName,
+  projects,
   onClose,
   onConfirm,
 }: NewClaudeSessionDialogProps) {
   const [name, setName] = useState("");
+  const [selectedProject, setSelectedProject] = useState(projectName);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
       setName(generateName());
+      setSelectedProject(projectName);
       setTimeout(() => {
         inputRef.current?.focus();
         inputRef.current?.select();
       }, 50);
     }
-  }, [open]);
+  }, [open, projectName]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onConfirm(name.trim() || generateName());
+    const project = projects?.find((p) => p.name === selectedProject);
+    onConfirm(
+      name.trim() || generateName(),
+      project?.directory || undefined,
+      selectedProject || undefined
+    );
   };
+
+  const showProjectSelector = projects && projects.length > 0 && !projectName;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -80,8 +99,35 @@ export function NewClaudeSessionDialog({
           <DialogTitle className="text-base">New session</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {showProjectSelector ? (
+            <div>
+              <label className="text-muted-foreground mb-2 block text-xs">
+                Project
+              </label>
+              <Select
+                value={selectedProject}
+                onValueChange={setSelectedProject}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects
+                    .filter((p) => !p.hidden && p.sessionCount > 0)
+                    .map((p) => (
+                      <SelectItem key={p.name} value={p.name}>
+                        {p.displayName}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            projectName && (
+              <p className="text-muted-foreground text-xs">{projectName}</p>
+            )
+          )}
           <div>
-            <p className="text-muted-foreground mb-2 text-xs">{projectName}</p>
             <div className="flex gap-2">
               <Input
                 ref={inputRef}
@@ -105,7 +151,11 @@ export function NewClaudeSessionDialog({
             <Button type="button" variant="ghost" size="sm" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" size="sm">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={showProjectSelector && !selectedProject}
+            >
               Create
             </Button>
           </div>

@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import readline from "readline";
 import os from "os";
+import { listSessions as sdkListSessions } from "@anthropic-ai/claude-agent-sdk";
 
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
 
@@ -60,28 +61,6 @@ export interface AgentTool {
   toolInput: Record<string, unknown>;
   toolResult?: string;
   timestamp: string;
-}
-
-function extractUserText(
-  content: string | ContentBlock[]
-): string | null {
-  const text =
-    typeof content === "string"
-      ? content
-      : content
-          .filter((b) => b.type === "text" && b.text)
-          .map((b) => b.text!)
-          .join(" ");
-
-  if (!text) return null;
-
-  const stripped = text
-    .replace(/<[^>]+>[^<]*<\/[^>]+>/g, "")
-    .replace(/<[^>]+>/g, "")
-    .trim();
-
-  if (!stripped || stripped.length < 5) return null;
-  return stripped.slice(0, 120);
 }
 
 export function getClaudeProjectNames(): string[] {
@@ -166,90 +145,18 @@ export async function getSessions(
   limit = 20,
   offset = 0
 ): Promise<{ sessions: SessionInfo[]; total: number }> {
-  const projectDir = getProjectDir(projectName);
-  const files = getJsonlFiles(projectDir);
-  const sessionMap = new Map<
-    string,
-    {
-      summary: string;
-      lastActivity: string;
-      messageCount: number;
-      cwd: string | null;
-    }
-  >();
+  const dir = await extractProjectDirectory(projectName);
+  const sdkSessions = await sdkListSessions(dir ? { dir } : undefined);
 
-  await Promise.all(
-    files.map(async (file) => {
-      const stream = fs.createReadStream(file);
-      const rl = readline.createInterface({
-        input: stream,
-        crlfDelay: Infinity,
-      });
-
-      for await (const line of rl) {
-        if (!line.trim()) continue;
-        let entry: JsonlEntry;
-        try {
-          entry = JSON.parse(line);
-        } catch {
-          continue;
-        }
-
-        if (!entry.sessionId) continue;
-        if (entry.isApiErrorMessage) continue;
-
-        const existing = sessionMap.get(entry.sessionId);
-        const ts = entry.timestamp || new Date(0).toISOString();
-
-        if (!existing) {
-          let summary = "";
-          if (entry.customTitle) {
-            summary = entry.customTitle;
-          } else if (entry.summary) {
-            summary = entry.summary;
-          } else if (
-            entry.message?.role === "user" &&
-            entry.message.content
-          ) {
-            summary = extractUserText(entry.message.content) || "";
-          }
-          sessionMap.set(entry.sessionId, {
-            summary,
-            lastActivity: ts,
-            messageCount: 1,
-            cwd: entry.cwd || null,
-          });
-        } else {
-          existing.messageCount++;
-          if (ts > existing.lastActivity) {
-            existing.lastActivity = ts;
-          }
-          if (!existing.cwd && entry.cwd) {
-            existing.cwd = entry.cwd;
-          }
-          if (entry.customTitle) {
-            existing.summary = entry.customTitle;
-          } else if (!existing.summary && entry.summary) {
-            existing.summary = entry.summary;
-          } else if (
-            !existing.summary &&
-            entry.message?.role === "user" &&
-            entry.message.content
-          ) {
-            existing.summary = extractUserText(entry.message.content) || "";
-          }
-        }
-      }
-    })
-  );
-
-  const sessions = Array.from(sessionMap.entries())
-    .map(([sessionId, data]) => ({ sessionId, ...data }))
-    .sort(
-      (a, b) =>
-        new Date(b.lastActivity).getTime() -
-        new Date(a.lastActivity).getTime()
-    );
+  const sessions: SessionInfo[] = sdkSessions
+    .filter((s) => !s.summary?.startsWith('{ "'))
+    .map((s) => ({
+      sessionId: s.sessionId,
+      summary: s.customTitle || s.summary || "New Session",
+      lastActivity: new Date(s.lastModified).toISOString(),
+      messageCount: (s.fileSize ?? 0) > 500 ? 3 : 0,
+      cwd: s.cwd || dir || null,
+    }));
 
   return {
     sessions: sessions.slice(offset, offset + limit),

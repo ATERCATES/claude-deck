@@ -206,12 +206,6 @@ export function MobileTabBar({
           )}
         </div>
       )}
-      {session?.working_directory && session.working_directory !== "~" && (
-        <OpenInVSCode
-          workingDirectory={session.working_directory}
-          className="h-7 w-7"
-        />
-      )}
     </div>
   );
 }

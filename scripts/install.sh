@@ -80,8 +80,15 @@ if ! command -v git &> /dev/null; then
 fi
 
 if ! command -v tmux &> /dev/null; then
-  log_error "tmux is required. Install it with: sudo apt install tmux"
-  exit 1
+  log_warn "tmux is not installed (required for session management)"
+  ask "Install tmux now? (y/n)" "y" INSTALL_TMUX
+  if [[ "$INSTALL_TMUX" == "y" ]]; then
+    sudo apt install -y tmux
+    log_success "tmux installed"
+  else
+    log_error "tmux is required. Install it manually and re-run."
+    exit 1
+  fi
 fi
 
 # ─── Node.js ──────────────────────────────────────────────────────────────────

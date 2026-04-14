@@ -34,7 +34,14 @@ export function createWebSocketConnection(
   intentionalCloseRef: React.MutableRefObject<boolean>
 ): WebSocketManager {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const ws = new WebSocket(`${protocol}//${window.location.host}/ws/terminal`);
+  let ptyId: string | null = null;
+
+  function buildWsUrl() {
+    const base = `${protocol}//${window.location.host}/ws/terminal`;
+    return ptyId ? `${base}?ptyId=${ptyId}` : base;
+  }
+
+  const ws = new WebSocket(buildWsUrl());
   wsRef.current = ws;
 
   const sendResize = (cols: number, rows: number) => {
@@ -93,10 +100,11 @@ export function createWebSocketConnection(
     callbacks.onConnectionStateChange("reconnecting");
     reconnectDelayRef.current = WS_RECONNECT_BASE_DELAY;
 
-    // Create fresh connection with saved handlers
-    const newWs = new WebSocket(
-      `${protocol}//${window.location.host}/ws/terminal`
-    );
+    // Reattach to the same PTY if we have an ID
+    if (ptyId) {
+      term.clear();
+    }
+    const newWs = new WebSocket(buildWsUrl());
     wsRef.current = newWs;
     newWs.onopen = savedHandlers.onopen;
     newWs.onmessage = savedHandlers.onmessage;
@@ -135,6 +143,10 @@ export function createWebSocketConnection(
     resetInactivityTimer();
     try {
       const msg = JSON.parse(event.data);
+      if (msg.type === "pty-id") {
+        ptyId = msg.ptyId;
+        return;
+      }
       if (msg.type === "output") {
         const buffer = term.buffer.active;
         const scrollYBefore = buffer.viewportY;

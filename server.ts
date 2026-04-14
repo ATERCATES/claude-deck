@@ -89,65 +89,86 @@ app.prepare().then(async () => {
     ws.on("close", () => clearInterval(interval));
   }
 
-  // Terminal connections
-  terminalWss.on("connection", (ws: WebSocket) => {
-    setupHeartbeat(ws);
-    let ptyProcess: pty.IPty;
-    try {
-      const shell = process.env.SHELL || "/bin/zsh";
-      // Use minimal env - only essentials for shell to work
-      // This lets Next.js/Vite/etc load .env.local without interference from parent process env
-      const minimalEnv: { [key: string]: string } = {
-        PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
-        HOME: process.env.HOME || "/",
-        USER: process.env.USER || "",
-        SHELL: shell,
-        TERM: "xterm-256color",
-        COLORTERM: "truecolor",
-        LANG: process.env.LANG || "en_US.UTF-8",
-      };
+  // --- Persistent PTY pool ---
+  // PTYs survive WebSocket disconnects. Clients attach/reattach by ptyId.
+  interface PtyEntry {
+    process: pty.IPty;
+    ws: WebSocket | null;
+    buffer: string[];
+  }
+  const ptyPool = new Map<string, PtyEntry>();
+  const MAX_SCROLLBACK_BUFFER = 50000;
 
-      ptyProcess = pty.spawn(shell, [], {
-        name: "xterm-256color",
-        cols: 80,
-        rows: 24,
-        cwd: process.env.HOME || "/",
-        env: minimalEnv,
-      });
-    } catch (err) {
-      console.error("Failed to spawn pty:", err);
-      ws.send(
-        JSON.stringify({ type: "error", message: "Failed to start terminal" })
-      );
-      ws.close();
-      return;
+  function spawnPty(): { id: string; entry: PtyEntry } {
+    const shell = process.env.SHELL || "/bin/zsh";
+    const minimalEnv: { [key: string]: string } = {
+      PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
+      HOME: process.env.HOME || "/",
+      USER: process.env.USER || "",
+      SHELL: shell,
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
+      LANG: process.env.LANG || "en_US.UTF-8",
+    };
+
+    const proc = pty.spawn(shell, [], {
+      name: "xterm-256color",
+      cols: 80,
+      rows: 24,
+      cwd: process.env.HOME || "/",
+      env: minimalEnv,
+    });
+
+    const id = `pty_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const entry: PtyEntry = { process: proc, ws: null, buffer: [] };
+
+    proc.onData((data: string) => {
+      entry.buffer.push(data);
+      if (entry.buffer.length > MAX_SCROLLBACK_BUFFER) {
+        entry.buffer.splice(0, entry.buffer.length - MAX_SCROLLBACK_BUFFER);
+      }
+      if (entry.ws?.readyState === WebSocket.OPEN) {
+        entry.ws.send(JSON.stringify({ type: "output", data }));
+      }
+    });
+
+    proc.onExit(({ exitCode }) => {
+      if (entry.ws?.readyState === WebSocket.OPEN) {
+        entry.ws.send(JSON.stringify({ type: "exit", code: exitCode }));
+      }
+      ptyPool.delete(id);
+    });
+
+    ptyPool.set(id, entry);
+    return { id, entry };
+  }
+
+  function attachWsToPty(ws: WebSocket, entry: PtyEntry, _ptyId: string) {
+    // Detach previous WebSocket if any
+    if (entry.ws && entry.ws !== ws && entry.ws.readyState === WebSocket.OPEN) {
+      entry.ws.onclose = null;
+      entry.ws.onerror = null;
+      entry.ws.close(1000, "Replaced by new connection");
     }
+    entry.ws = ws;
 
-    ptyProcess.onData((data: string) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "output", data }));
-      }
-    });
-
-    ptyProcess.onExit(({ exitCode }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "exit", code: exitCode }));
-        ws.close();
-      }
-    });
+    // Replay buffered output so the client sees prior terminal state
+    if (entry.buffer.length > 0) {
+      ws.send(JSON.stringify({ type: "output", data: entry.buffer.join("") }));
+    }
 
     ws.on("message", (message: Buffer) => {
       try {
         const msg = JSON.parse(message.toString());
         switch (msg.type) {
           case "input":
-            ptyProcess.write(msg.data);
+            entry.process.write(msg.data);
             break;
           case "resize":
-            ptyProcess.resize(msg.cols, msg.rows);
+            entry.process.resize(msg.cols, msg.rows);
             break;
           case "command":
-            ptyProcess.write(msg.data + "\r");
+            entry.process.write(msg.data + "\r");
             break;
         }
       } catch (err) {
@@ -156,13 +177,42 @@ app.prepare().then(async () => {
     });
 
     ws.on("close", () => {
-      ptyProcess.kill();
+      if (entry.ws === ws) entry.ws = null;
+      // PTY stays alive — no kill
     });
 
-    ws.on("error", (err) => {
-      console.error("WebSocket error:", err);
-      ptyProcess.kill();
+    ws.on("error", () => {
+      if (entry.ws === ws) entry.ws = null;
     });
+  }
+
+  // Terminal connections
+  terminalWss.on("connection", (ws: WebSocket, request) => {
+    setupHeartbeat(ws);
+
+    const { query } = parse(request.url || "", true);
+    const requestedPtyId = typeof query.ptyId === "string" ? query.ptyId : null;
+
+    // Try to reattach to existing PTY
+    if (requestedPtyId && ptyPool.has(requestedPtyId)) {
+      const entry = ptyPool.get(requestedPtyId)!;
+      ws.send(JSON.stringify({ type: "pty-id", ptyId: requestedPtyId }));
+      attachWsToPty(ws, entry, requestedPtyId);
+      return;
+    }
+
+    // Spawn new PTY
+    try {
+      const { id, entry } = spawnPty();
+      ws.send(JSON.stringify({ type: "pty-id", ptyId: id }));
+      attachWsToPty(ws, entry, id);
+    } catch (err) {
+      console.error("Failed to spawn pty:", err);
+      ws.send(
+        JSON.stringify({ type: "error", message: "Failed to start terminal" })
+      );
+      ws.close();
+    }
   });
 
   await initDb();

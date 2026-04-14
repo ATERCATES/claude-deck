@@ -291,6 +291,17 @@ export function DesktopTabBar({
 
       {/* Pane Controls */}
       <div className="ml-auto flex items-center gap-0.5 px-2">
+        {session?.branch_name && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-muted-foreground flex items-center gap-1 text-[10px]">
+                <GitBranch className="h-3 w-3" />
+                {session.branch_name}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Worktree branch</TooltipContent>
+          </Tooltip>
+        )}
         {session?.working_directory && session.working_directory !== "~" && (
           <OpenInVSCode workingDirectory={session.working_directory} />
         )}

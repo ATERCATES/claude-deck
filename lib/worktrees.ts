@@ -111,6 +111,15 @@ export async function createWorktree(
         { timeout: 30000 }
       );
       lastError = null;
+
+      // Init submodules if present
+      if (fs.existsSync(path.join(worktreePath, ".gitmodules"))) {
+        await execAsync(
+          `git -C "${worktreePath}" submodule update --init --recursive`,
+          { timeout: 120000 }
+        );
+      }
+
       break; // Success!
     } catch (error: unknown) {
       lastError = error instanceof Error ? error : new Error(String(error));

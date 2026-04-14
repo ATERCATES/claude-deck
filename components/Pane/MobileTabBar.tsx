@@ -122,6 +122,12 @@ export function MobileTabBar({
               <span className="truncate text-sm font-medium">
                 {session?.name || "No session"}
               </span>
+              {session?.branch_name && (
+                <span className="text-muted-foreground flex items-center gap-0.5 text-[10px]">
+                  <GitBranch className="h-2.5 w-2.5" />
+                  {session.branch_name}
+                </span>
+              )}
               {sessionList.length > 0 && (
                 <ChevronDown className="text-muted-foreground h-3 w-3 shrink-0" />
               )}

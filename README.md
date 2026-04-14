@@ -7,13 +7,13 @@ Self-hosted web UI for managing Claude Code sessions.
 ### Quick Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ATERCATES/claude-deck/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ATERCATES/claude-deck/main/scripts/install.sh -o /tmp/install-claudedeck.sh
+bash /tmp/install-claudedeck.sh
 ```
 
 The installer will:
 
-- Install Node.js 24 if needed (via [n](https://github.com/tj/n))
-- Install pnpm
+- Install Node.js 24, pnpm, and tmux if needed
 - Ask for port, SSH host/port (for VS Code remote button)
 - Clone, build, and start as a systemd service
 - First visit prompts you to create an account
@@ -21,7 +21,7 @@ The installer will:
 ### Non-Interactive
 
 ```bash
-bash install.sh --port 3011 --ssh-host myserver.com --ssh-port 22 -y
+curl -fsSL https://raw.githubusercontent.com/ATERCATES/claude-deck/main/scripts/install.sh | bash -s -- --port 3011 --ssh-host myserver.com --ssh-port 22 -y
 ```
 
 ### Manual Install

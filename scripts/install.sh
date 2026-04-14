@@ -2,14 +2,15 @@
 #
 # ClaudeDeck Installer
 #
-# Install:
-#   curl -fsSL https://raw.githubusercontent.com/ATERCATES/claude-deck/main/scripts/install.sh | bash
+# Install (interactive):
+#   curl -fsSL https://raw.githubusercontent.com/ATERCATES/claude-deck/main/scripts/install.sh -o /tmp/install-claudedeck.sh
+#   bash /tmp/install-claudedeck.sh
+#
+# Install (non-interactive):
+#   curl -fsSL https://raw.githubusercontent.com/ATERCATES/claude-deck/main/scripts/install.sh | bash -s -- --port 3011 --ssh-host myserver.com --ssh-port 22 -y
 #
 # Update:
-#   ~/.claude-deck/install.sh --update
-#
-# Options:
-#   --port 3011 --ssh-host myserver.com --ssh-port 22 -y
+#   ~/.claude-deck/scripts/install.sh --update
 #
 
 set -e

@@ -6,7 +6,17 @@ interface Migration {
   up: (db: Database.Database) => void;
 }
 
-const migrations: Migration[] = [];
+const migrations: Migration[] = [
+  {
+    id: 1,
+    name: "add_session_listening_ports",
+    up: (db) => {
+      db.exec(
+        "ALTER TABLE sessions ADD COLUMN listening_ports TEXT NOT NULL DEFAULT '[]'"
+      );
+    },
+  },
+];
 
 export function runMigrations(db: Database.Database): void {
   db.exec(`

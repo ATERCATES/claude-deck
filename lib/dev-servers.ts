@@ -2,7 +2,12 @@ import { spawn, exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs";
 import path from "path";
-import { queries, type DevServer, type DevServerType, type DevServerStatus } from "./db";
+import {
+  queries,
+  type DevServer,
+  type DevServerType,
+  type DevServerStatus,
+} from "./db";
 
 const execAsync = promisify(exec);
 
@@ -49,53 +54,60 @@ async function isPidRunning(pid: number): Promise<boolean> {
   }
 }
 
-// Check if a port is in use
-async function isPortInUse(port: number): Promise<boolean> {
-  try {
-    const { stdout } = await execAsync(
-      `lsof -i :${port} -t 2>/dev/null || true`
-    );
-    return stdout.trim().length > 0;
-  } catch {
-    return false;
-  }
-}
+// Detect which TCP ports a process is listening on via lsof
+async function detectListeningPorts(
+  pid: number,
+  retries = 5
+): Promise<number[]> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const { stdout } = await execAsync(
+        `lsof -P -iTCP -sTCP:LISTEN -a -p ${pid} -Fn 2>/dev/null || true`
+      );
+      const ports = [
+        ...new Set(
+          stdout
+            .split("\n")
+            .filter((line) => line.startsWith("n"))
+            .map((line) => parseInt(line.slice(line.lastIndexOf(":") + 1), 10))
+            .filter((port) => !isNaN(port) && port > 0)
+        ),
+      ].sort((a, b) => a - b);
 
-// Get PID using a port
-async function getPidOnPort(port: number): Promise<number | null> {
-  try {
-    const { stdout } = await execAsync(
-      `lsof -i :${port} -t 2>/dev/null | head -1`
-    );
-    const pid = parseInt(stdout.trim(), 10);
-    return isNaN(pid) ? null : pid;
-  } catch {
-    return null;
+      if (ports.length > 0) return ports;
+    } catch {
+      // lsof failed, retry
+    }
+    if (i < retries - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
   }
+  return [];
 }
 
 // Check Node.js server status
 async function checkNodeStatus(server: DevServer): Promise<DevServerStatus> {
-  if (server.pid) {
-    const running = await isPidRunning(server.pid);
-    if (running) return "running";
-  }
+  if (!server.pid) return "stopped";
 
-  // Check if any of its ports are in use
-  const ports: number[] = JSON.parse(server.ports || "[]");
-  for (const port of ports) {
-    if (await isPortInUse(port)) {
-      // Port is in use, try to get the PID
-      const pid = await getPidOnPort(port);
-      if (pid) {
-        // Update PID in database
-        await queries.updateDevServerPid(pid, "running", server.id);
-        return "running";
-      }
+  const running = await isPidRunning(server.pid);
+  if (!running) return "stopped";
+
+  const ports = await detectListeningPorts(server.pid, 1);
+  if (ports.length > 0) {
+    const current = JSON.stringify(ports);
+    if (current !== server.ports) {
+      await queries.updateDevServer(
+        "running",
+        server.pid,
+        null,
+        current,
+        server.id
+      );
+      server.ports = current;
     }
   }
 
-  return "stopped";
+  return "running";
 }
 
 // Check Docker service status
@@ -269,7 +281,13 @@ export async function startServer(
         opts.command,
         opts.workingDirectory
       );
-      await queries.updateDevServer("running", null, containerId, JSON.stringify(ports), id);
+      await queries.updateDevServer(
+        "running",
+        null,
+        containerId,
+        JSON.stringify(ports),
+        id
+      );
     } else {
       const { pid } = await spawnNodeServer(
         id,
@@ -277,7 +295,15 @@ export async function startServer(
         opts.workingDirectory,
         ports
       );
-      await queries.updateDevServer("running", pid, null, JSON.stringify(ports), id);
+      const detectedPorts = await detectListeningPorts(pid);
+      const resolvedPorts = detectedPorts.length > 0 ? detectedPorts : ports;
+      await queries.updateDevServer(
+        "running",
+        pid,
+        null,
+        JSON.stringify(resolvedPorts),
+        id
+      );
     }
   } catch (error) {
     await queries.updateDevServerStatus("failed", id);
@@ -314,19 +340,6 @@ export async function stopServer(id: string): Promise<void> {
         // Process may already be dead
       }
     }
-
-    // Also check ports and kill anything on them
-    const ports: number[] = JSON.parse(server.ports || "[]");
-    for (const port of ports) {
-      const pid = await getPidOnPort(port);
-      if (pid) {
-        try {
-          process.kill(pid, "SIGTERM");
-        } catch {
-          // Ignore
-        }
-      }
-    }
   }
 
   await queries.updateDevServerStatus("stopped", id);
@@ -345,7 +358,13 @@ export async function restartServer(id: string): Promise<DevServer> {
       server.command,
       server.working_directory
     );
-    await queries.updateDevServer("running", null, containerId, server.ports, id);
+    await queries.updateDevServer(
+      "running",
+      null,
+      containerId,
+      server.ports,
+      id
+    );
   } else {
     const ports: number[] = JSON.parse(server.ports || "[]");
     const { pid } = await spawnNodeServer(
@@ -354,7 +373,15 @@ export async function restartServer(id: string): Promise<DevServer> {
       server.working_directory,
       ports
     );
-    await queries.updateDevServer("running", pid, null, server.ports, id);
+    const detectedPorts = await detectListeningPorts(pid);
+    const resolvedPorts = detectedPorts.length > 0 ? detectedPorts : ports;
+    await queries.updateDevServer(
+      "running",
+      pid,
+      null,
+      JSON.stringify(resolvedPorts),
+      id
+    );
   }
 
   return (await queries.getDevServer(id))!;
@@ -415,23 +442,14 @@ export async function detectNodeServer(
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
     const scripts = packageJson.scripts || {};
 
-    // Look for common dev server scripts
     const devScripts = ["dev", "start", "serve", "develop"];
     for (const script of devScripts) {
       if (scripts[script]) {
-        // Try to detect port from script
-        const scriptContent = scripts[script];
-        let port = 3000; // default
-        const portMatch = scriptContent.match(/(?:port|PORT)[=\s]+(\d+)/i);
-        if (portMatch) {
-          port = parseInt(portMatch[1], 10);
-        }
-
         return {
           type: "node",
           name: packageJson.name || path.basename(workingDir),
           command: `npm run ${script}`,
-          ports: [port],
+          ports: [],
         };
       }
     }

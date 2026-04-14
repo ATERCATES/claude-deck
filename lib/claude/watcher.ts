@@ -3,7 +3,11 @@ import path from "path";
 import os from "os";
 import { WebSocket } from "ws";
 import { invalidateProject, invalidateAll } from "./jsonl-cache";
-import { onStateFileChange, invalidateSessionName } from "../status-monitor";
+import {
+  onStateFileChange,
+  invalidateSessionName,
+  getStatusSnapshot,
+} from "../status-monitor";
 import { STATES_DIR } from "../hooks/setup";
 
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
@@ -13,6 +17,11 @@ const updateClients = new Set<WebSocket>();
 export function addUpdateClient(ws: WebSocket): void {
   updateClients.add(ws);
   ws.on("close", () => updateClients.delete(ws));
+
+  const snapshot = getStatusSnapshot();
+  if (Object.keys(snapshot).length > 0) {
+    ws.send(JSON.stringify({ type: "session-statuses", statuses: snapshot }));
+  }
 }
 
 export function broadcast(msg: object): void {

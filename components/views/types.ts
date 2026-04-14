@@ -10,6 +10,7 @@ export interface SessionStatus {
   lastLine?: string;
   waitingContext?: string;
   claudeSessionId?: string | null;
+  listeningPorts?: number[];
 }
 
 export interface ViewProps {

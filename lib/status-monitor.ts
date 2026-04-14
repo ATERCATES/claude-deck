@@ -54,6 +54,7 @@ export interface SessionStatusSnapshot {
   waitingContext?: string;
   claudeSessionId: string | null;
   agentType: AgentType;
+  listeningPorts: number[];
 }
 
 // --- State ---
@@ -86,6 +87,88 @@ function listStateFiles(): Map<string, StateFile> {
     // dir may not exist yet
   }
   return map;
+}
+
+// --- Port detection ---
+
+interface ListeningProcess {
+  pid: string;
+  port: number;
+  cwd: string;
+}
+
+let cachedListeners: { data: ListeningProcess[]; ts: number } | null = null;
+const LISTENER_CACHE_TTL = 2500;
+
+async function getListeningProcesses(): Promise<ListeningProcess[]> {
+  const now = Date.now();
+  if (cachedListeners && now - cachedListeners.ts < LISTENER_CACHE_TTL) {
+    return cachedListeners.data;
+  }
+
+  try {
+    const { stdout } = await execAsync(
+      `lsof -P -iTCP -sTCP:LISTEN -Fn 2>/dev/null || true`
+    );
+
+    // Parse lsof output: lines alternate between p (pid) and n (name)
+    const results: ListeningProcess[] = [];
+    let currentPid = "";
+    for (const line of stdout.split("\n")) {
+      if (line.startsWith("p")) {
+        currentPid = line.slice(1);
+      } else if (line.startsWith("n") && currentPid) {
+        const port = parseInt(line.slice(line.lastIndexOf(":") + 1), 10);
+        if (!isNaN(port) && port > 0) {
+          results.push({ pid: currentPid, port, cwd: "" });
+        }
+      }
+    }
+
+    // Deduplicate by pid+port
+    const unique = [
+      ...new Map(results.map((r) => [`${r.pid}:${r.port}`, r])).values(),
+    ];
+
+    // Batch-resolve cwds
+    if (unique.length > 0) {
+      const pids = [...new Set(unique.map((r) => r.pid))].join(",");
+      try {
+        const { stdout: cwdOut } = await execAsync(
+          `lsof -a -p ${pids} -d cwd -Fpn 2>/dev/null || true`
+        );
+        const cwdMap = new Map<string, string>();
+        let pid = "";
+        for (const line of cwdOut.split("\n")) {
+          if (line.startsWith("p")) pid = line.slice(1);
+          else if (line.startsWith("n") && pid) cwdMap.set(pid, line.slice(1));
+        }
+        for (const entry of unique) {
+          entry.cwd = cwdMap.get(entry.pid) || "";
+        }
+      } catch {
+        // cwd resolution failed, proceed without
+      }
+    }
+
+    cachedListeners = { data: unique, ts: now };
+    return unique;
+  } catch {
+    return [];
+  }
+}
+
+async function detectSessionPorts(
+  sessionCwd: string | null
+): Promise<number[]> {
+  if (!sessionCwd) return [];
+
+  const listeners = await getListeningProcesses();
+  return [
+    ...new Set(
+      listeners.filter((l) => l.cwd.startsWith(sessionCwd)).map((l) => l.port)
+    ),
+  ].sort((a, b) => a - b);
 }
 
 // --- tmux ---
@@ -149,11 +232,13 @@ async function buildSnapshot(
   const entries = await Promise.all(
     [...tmuxSessions.entries()].map(async ([sessionId, tmuxName]) => {
       const meta = await resolveSessionMeta(sessionId);
-      return { sessionId, tmuxName, ...meta };
+      const ports = await detectSessionPorts(meta.cwd);
+      return { sessionId, tmuxName, ports, ...meta };
     })
   );
 
-  for (const { sessionId, tmuxName, name, cwd } of entries) {
+  const db = getDb();
+  for (const { sessionId, tmuxName, name, cwd, ports } of entries) {
     const agentType = getProviderIdFromSessionName(tmuxName) || "claude";
     const state = stateFiles.get(sessionId);
 
@@ -167,12 +252,20 @@ async function buildSnapshot(
         : {}),
       claudeSessionId: sessionId,
       agentType,
+      listeningPorts: ports,
     };
+
+    try {
+      db.prepare(
+        "UPDATE sessions SET listening_ports = ? WHERE id = ? OR claude_session_id = ?"
+      ).run(JSON.stringify(ports), sessionId, sessionId);
+    } catch {
+      // DB update failure shouldn't break the monitor
+    }
   }
 
   // Filter out hidden sessions
   try {
-    const db = getDb();
     const hiddenRows = db
       .prepare("SELECT item_id FROM hidden_items WHERE item_type = 'session'")
       .all() as { item_id: string }[];
@@ -200,7 +293,8 @@ function snapshotChanged(
       !p ||
       p.status !== n.status ||
       p.lastLine !== n.lastLine ||
-      p.sessionName !== n.sessionName
+      p.sessionName !== n.sessionName ||
+      JSON.stringify(p.listeningPorts) !== JSON.stringify(n.listeningPorts)
     )
       return true;
   }

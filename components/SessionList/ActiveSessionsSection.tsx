@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronRight, Activity, AlertCircle, Moon } from "lucide-react";
+import { ChevronRight, Activity, AlertCircle, Moon, Globe } from "lucide-react";
 import type { SessionStatus } from "@/components/views/types";
 
 interface ActiveSessionsSectionProps {
@@ -92,6 +92,24 @@ export function ActiveSessionsSection({
                     {session.lastLine}
                   </span>
                 )}
+                {session.listeningPorts &&
+                  session.listeningPorts.length > 0 && (
+                    <div className="mt-0.5 flex flex-wrap gap-1">
+                      {session.listeningPorts.map((port) => (
+                        <a
+                          key={port}
+                          href={`http://localhost:${port}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-0.5 rounded bg-sky-500/15 px-1.5 py-0.5 font-mono text-[10px] text-sky-400 transition-colors hover:bg-sky-500/25"
+                        >
+                          <Globe className="h-2.5 w-2.5" />
+                          {port}
+                        </a>
+                      ))}
+                    </div>
+                  )}
               </div>
             </button>
           ))}

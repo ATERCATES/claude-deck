@@ -29,6 +29,7 @@ export interface Session {
   conductor_session_id: string | null;
   worker_task: string | null;
   worker_status: "pending" | "running" | "completed" | "failed" | null;
+  listening_ports: string;
 }
 
 export interface Project {

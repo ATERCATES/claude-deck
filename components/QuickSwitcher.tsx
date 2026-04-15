@@ -10,8 +10,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Terminal, Clock } from "lucide-react";
-import { CodeSearchResults } from "@/components/CodeSearch/CodeSearchResults";
-import { useRipgrepAvailable } from "@/data/code-search";
 import { useClaudeProjectsQuery, useClaudeSessionsQuery } from "@/data/claude";
 import type { ClaudeProject } from "@/data/claude";
 import type { SessionStatus } from "@/components/views/types";
@@ -25,9 +23,7 @@ interface QuickSwitcherProps {
     summary: string,
     projectName: string
   ) => void;
-  onSelectFile?: (file: string, line: number) => void;
   currentSessionId?: string;
-  activeSessionWorkingDir?: string;
   sessionStatuses?: Record<string, SessionStatus>;
 }
 
@@ -44,17 +40,13 @@ export function QuickSwitcher({
   open,
   onOpenChange,
   onResumeClaudeSession,
-  onSelectFile,
   currentSessionId,
-  activeSessionWorkingDir,
   sessionStatuses,
 }: QuickSwitcherProps) {
-  const [mode, setMode] = useState<"sessions" | "code">("sessions");
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { data: ripgrepAvailable } = useRipgrepAvailable();
   const { data: projects } = useClaudeProjectsQuery();
 
   const topProjects = useMemo(() => {
@@ -106,7 +98,6 @@ export function QuickSwitcher({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when .data changes, not entire query objects
   }, [s0.data, s1.data, s2.data, s3.data, topProjects]);
 
-  // Build a map of claudeSessionId -> status for quick lookup
   const statusByClaudeId = useMemo(() => {
     if (!sessionStatuses) return new Map<string, SessionStatus>();
     const map = new Map<string, SessionStatus>();
@@ -130,7 +121,6 @@ export function QuickSwitcher({
       );
     }
 
-    // Sort: waiting first, then running, then by time
     return [...sessions].sort((a, b) => {
       const statusA = statusByClaudeId.get(a.sessionId)?.status;
       const statusB = statusByClaudeId.get(b.sessionId)?.status;
@@ -149,18 +139,11 @@ export function QuickSwitcher({
 
   useEffect(() => {
     if (open) {
-      setMode("sessions");
       setQuery("");
       setSelectedIndex(0);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [open]);
-
-  useEffect(() => {
-    if (ripgrepAvailable === false && mode === "code") {
-      setMode("sessions");
-    }
-  }, [ripgrepAvailable, mode]);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -209,136 +192,89 @@ export function QuickSwitcher({
     return `${Math.floor(hours / 24)}d ago`;
   };
 
-  const handleSelectFile = useCallback(
-    (file: string, line: number) => {
-      onOpenChange(false);
-      onSelectFile?.(file, line);
-    },
-    [onOpenChange, onSelectFile]
-  );
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="sr-only">
-          <DialogTitle>Switch Session / Search Code</DialogTitle>
+          <DialogTitle>Switch Session</DialogTitle>
         </DialogHeader>
-
-        {ripgrepAvailable === true && (
-          <div className="border-border flex gap-2 border-b p-2">
-            <button
-              onClick={() => setMode("sessions")}
-              className={cn(
-                "rounded-full px-3 py-1 text-sm transition-colors",
-                mode === "sessions"
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-accent"
-              )}
-            >
-              Sessions
-            </button>
-            <button
-              onClick={() => setMode("code")}
-              className={cn(
-                "rounded-full px-3 py-1 text-sm transition-colors",
-                mode === "code"
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-accent"
-              )}
-            >
-              Code Search
-            </button>
-          </div>
-        )}
 
         <div className="border-border border-b p-3">
           <Input
             ref={inputRef}
-            placeholder={
-              mode === "sessions" || !ripgrepAvailable
-                ? "Search sessions..."
-                : "Search code (min 3 chars)..."
-            }
+            placeholder="Search sessions..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={mode === "sessions" ? handleKeyDown : undefined}
+            onKeyDown={handleKeyDown}
             className="h-10"
           />
         </div>
 
         <div className="max-h-[300px] overflow-y-auto py-2">
-          {mode === "sessions" ? (
-            filteredSessions.length === 0 ? (
-              <div className="text-muted-foreground px-4 py-8 text-center text-sm">
-                No sessions found
-              </div>
-            ) : (
-              filteredSessions.map((session, index) => {
-                const isCurrent = session.sessionId === currentSessionId;
-                const status = statusByClaudeId.get(session.sessionId);
-                return (
-                  <button
-                    key={session.sessionId}
-                    onClick={() => {
-                      onResumeClaudeSession(
-                        session.sessionId,
-                        session.cwd,
-                        session.summary,
-                        session.projectName
-                      );
-                      onOpenChange(false);
-                    }}
-                    className={cn(
-                      "flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors",
-                      index === selectedIndex
-                        ? "bg-accent"
-                        : "hover:bg-accent/50",
-                      isCurrent && "bg-primary/10",
-                      status?.status === "waiting" && "bg-amber-500/5"
-                    )}
-                  >
-                    <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-emerald-500/20 text-emerald-400">
-                      <Terminal className="h-4 w-4" />
-                      {status && (
-                        <span
-                          className={cn(
-                            "border-background absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2",
-                            status.status === "running" &&
-                              "animate-pulse bg-green-500",
-                            status.status === "waiting" &&
-                              "animate-pulse bg-amber-500",
-                            status.status === "idle" && "bg-gray-400"
-                          )}
-                        />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">
-                        {session.summary}
-                      </span>
-                      <span className="text-muted-foreground block truncate text-xs">
-                        {session.projectDisplayName}
-                      </span>
-                      {status?.lastLine && (
-                        <span className="text-muted-foreground block truncate font-mono text-[10px]">
-                          {status.lastLine}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-muted-foreground flex flex-shrink-0 items-center gap-1 text-xs">
-                      <Clock className="h-3 w-3" />
-                      <span>{formatTime(session.lastActivity)}</span>
-                    </div>
-                  </button>
-                );
-              })
-            )
+          {filteredSessions.length === 0 ? (
+            <div className="text-muted-foreground px-4 py-8 text-center text-sm">
+              No sessions found
+            </div>
           ) : (
-            <CodeSearchResults
-              workingDirectory={activeSessionWorkingDir || "~"}
-              query={query}
-              onSelectFile={handleSelectFile}
-            />
+            filteredSessions.map((session, index) => {
+              const isCurrent = session.sessionId === currentSessionId;
+              const status = statusByClaudeId.get(session.sessionId);
+              return (
+                <button
+                  key={session.sessionId}
+                  onClick={() => {
+                    onResumeClaudeSession(
+                      session.sessionId,
+                      session.cwd,
+                      session.summary,
+                      session.projectName
+                    );
+                    onOpenChange(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors",
+                    index === selectedIndex
+                      ? "bg-accent"
+                      : "hover:bg-accent/50",
+                    isCurrent && "bg-primary/10",
+                    status?.status === "waiting" && "bg-amber-500/5"
+                  )}
+                >
+                  <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-emerald-500/20 text-emerald-400">
+                    <Terminal className="h-4 w-4" />
+                    {status && (
+                      <span
+                        className={cn(
+                          "border-background absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2",
+                          status.status === "running" &&
+                            "animate-pulse bg-green-500",
+                          status.status === "waiting" &&
+                            "animate-pulse bg-amber-500",
+                          status.status === "idle" && "bg-gray-400"
+                        )}
+                      />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">
+                      {session.summary}
+                    </span>
+                    <span className="text-muted-foreground block truncate text-xs">
+                      {session.projectDisplayName}
+                    </span>
+                    {status?.lastLine && (
+                      <span className="text-muted-foreground block truncate font-mono text-[10px]">
+                        {status.lastLine}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-muted-foreground flex flex-shrink-0 items-center gap-1 text-xs">
+                    <Clock className="h-3 w-3" />
+                    <span>{formatTime(session.lastActivity)}</span>
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
 

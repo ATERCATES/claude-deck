@@ -474,11 +474,6 @@ check_and_install_prerequisites() {
         missing+=("tmux")
     fi
 
-    # Check ripgrep (with path detection)
-    if ! check_ripgrep; then
-        missing+=("ripgrep")
-    fi
-
     if [[ ${#missing[@]} -eq 0 ]]; then
         log_success "All prerequisites met"
     else

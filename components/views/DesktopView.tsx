@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/tooltip";
 import { QuickSwitcher } from "@/components/QuickSwitcher";
 import type { ViewProps } from "./types";
-import { fileOpenActions } from "@/stores/fileOpen";
 
 export function DesktopView({
   sessions,
@@ -240,15 +239,8 @@ export function DesktopView({
         open={showQuickSwitcher}
         onOpenChange={setShowQuickSwitcher}
         currentSessionId={focusedActiveTab?.sessionId ?? undefined}
-        activeSessionWorkingDir={activeSession?.working_directory ?? undefined}
         sessionStatuses={sessionStatuses}
         onResumeClaudeSession={resumeClaudeSession}
-        onSelectFile={(file, line) => {
-          const absolutePath = activeSession?.working_directory
-            ? `${activeSession.working_directory}/${file.replace(/^\.\//, "")}`
-            : file;
-          fileOpenActions.requestOpen(absolutePath, line);
-        }}
       />
       {startDevServerProject && (
         <StartServerDialog

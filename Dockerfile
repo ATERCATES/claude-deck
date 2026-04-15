@@ -1,5 +1,5 @@
 FROM node:20-alpine AS base
-RUN apk add --no-cache tmux git ripgrep python3 make g++ zsh
+RUN apk add --no-cache tmux git python3 make g++ zsh
 
 RUN npm i -g pnpm
 

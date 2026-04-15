@@ -8,7 +8,6 @@ import { PaneLayout } from "@/components/PaneLayout";
 import { SwipeSidebar } from "@/components/mobile/SwipeSidebar";
 import { QuickSwitcher } from "@/components/QuickSwitcher";
 import type { ViewProps } from "./types";
-import { fileOpenActions } from "@/stores/fileOpen";
 
 export function MobileView({
   sessions,
@@ -16,7 +15,7 @@ export function MobileView({
   sessionStatuses,
   sidebarOpen,
   setSidebarOpen,
-  activeSession,
+  activeSession: _activeSession,
   focusedActiveTab,
   showNewSessionDialog,
   setShowNewSessionDialog,
@@ -93,14 +92,7 @@ export function MobileView({
         open={showQuickSwitcher}
         onOpenChange={setShowQuickSwitcher}
         currentSessionId={focusedActiveTab?.sessionId ?? undefined}
-        activeSessionWorkingDir={activeSession?.working_directory ?? undefined}
         onResumeClaudeSession={resumeClaudeSession}
-        onSelectFile={(file, line) => {
-          const absolutePath = activeSession?.working_directory
-            ? `${activeSession.working_directory}/${file.replace(/^\.\//, "")}`
-            : file;
-          fileOpenActions.requestOpen(absolutePath, line);
-        }}
       />
       {startDevServerProject && (
         <StartServerDialog

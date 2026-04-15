@@ -1,9 +1,24 @@
-import type { ProviderId } from "./providers/registry";
+export type ProviderId = "claude";
 
 export type AgentType = ProviderId;
 
 export const CLAUDE_COMMAND = "claude";
 export const CLAUDE_AUTO_APPROVE_FLAG = "--dangerously-skip-permissions";
+
+export function getManagedSessionPattern(): RegExp {
+  return /^claude-(new-)?[0-9a-z]{4,}/i;
+}
+
+export function getProviderIdFromSessionName(
+  sessionName: string
+): ProviderId | null {
+  if (sessionName.startsWith("claude-")) return "claude";
+  return null;
+}
+
+export function getSessionIdFromName(sessionName: string): string {
+  return sessionName.replace(/^claude-/i, "");
+}
 
 export interface BuildFlagsOptions {
   sessionId?: string | null;
@@ -33,8 +48,4 @@ export function buildClaudeFlags(options: BuildFlagsOptions): string[] {
   }
 
   return flags;
-}
-
-export function isValidAgentType(value: string): value is AgentType {
-  return value === "claude";
 }

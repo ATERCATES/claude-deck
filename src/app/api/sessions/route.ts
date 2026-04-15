@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { queries, type Session } from "@/lib/db";
-import { isValidAgentType, type AgentType } from "@/lib/providers";
+import type { AgentType } from "@/lib/providers";
 import { createWorktree } from "@/lib/worktrees";
 import { setupWorktree } from "@/lib/env-setup";
 import { findAvailablePort } from "@/lib/ports";
@@ -49,7 +49,6 @@ export async function POST(request: NextRequest) {
       model = "sonnet",
       systemPrompt = null,
       claudeSessionId = null,
-      agentType: rawAgentType = "claude",
       autoApprove = false,
       projectId = null,
       // Worktree options
@@ -62,10 +61,7 @@ export async function POST(request: NextRequest) {
       initialPrompt = null,
     } = body;
 
-    // Validate agent type
-    const agentType: AgentType = isValidAgentType(rawAgentType)
-      ? rawAgentType
-      : "claude";
+    const agentType: AgentType = "claude";
 
     // Auto-generate name if not provided
     const name =

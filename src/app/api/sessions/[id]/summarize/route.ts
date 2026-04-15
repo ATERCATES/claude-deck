@@ -258,7 +258,7 @@ export async function POST(
     if (createFork) {
       const newId = randomUUID();
       const newName = `${session.name} (fresh)`;
-      const agentType = session.agent_type || "claude";
+      const agentType = session.agent_type;
       const tmuxName = `${agentType}-${newId}`;
 
       // Create new session in DB (using cwd already fetched above)
@@ -272,7 +272,7 @@ export async function POST(
         `Continue from previous session. Here's a summary of the work so far:\n\n${summary}`,
         agentType,
         session.auto_approve ?? false,
-        session.project_id || "uncategorized"
+        session.project_id ?? null
       );
 
       newSession = (await queries.getSession(newId)) as Session;

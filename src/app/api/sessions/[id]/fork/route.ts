@@ -32,7 +32,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Create new session
     const newId = randomUUID();
     const newName = name || `${parent.name} (fork)`;
-    const agentType = parent.agent_type || "claude";
+    const agentType = parent.agent_type;
     const tmuxName = `${agentType}-${newId}`;
 
     await queries.createSession(
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       parent.system_prompt,
       agentType,
       parent.auto_approve,
-      parent.project_id || "uncategorized"
+      parent.project_id ?? null
     );
 
     // NOTE: We do NOT copy claude_session_id here.

@@ -11,9 +11,13 @@ import { promisify } from "util";
 import { queries, type Session } from "./db";
 import { createWorktree, deleteWorktree } from "./worktrees";
 import { setupWorktree } from "./env-setup";
-import { type AgentType, CLAUDE_COMMAND, buildClaudeFlags } from "./providers";
+import {
+  type AgentType,
+  CLAUDE_COMMAND,
+  buildClaudeFlags,
+  getSessionIdFromName,
+} from "./providers";
 import { getStatusSnapshot } from "./status-monitor";
-import { getSessionIdFromName } from "./providers/registry";
 import { wrapWithBanner } from "./banner";
 import { runInBackground } from "./async-operations";
 
@@ -142,7 +146,7 @@ export async function spawnWorker(
     task,
     model,
     agentType,
-    "uncategorized" // project_id
+    null // project_id
   );
 
   // Update worktree info if created

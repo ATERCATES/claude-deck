@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { queries, type Session } from "@/lib/db";
-import { getManagedSessionPattern } from "@/lib/providers/registry";
+import { getManagedSessionPattern } from "@/lib/providers";
 
 const execAsync = promisify(exec);
 

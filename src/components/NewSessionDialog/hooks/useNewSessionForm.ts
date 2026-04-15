@@ -135,11 +135,6 @@ export function useNewSessionForm({
     localStorage.setItem(SKIP_PERMISSIONS_KEY, String(checked));
   };
 
-  const handleUseTmuxChange = (checked: boolean) => {
-    setUseTmux(checked);
-    localStorage.setItem(USE_TMUX_KEY, String(checked));
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     createSession.reset(); // Clear any previous errors
@@ -246,7 +241,6 @@ export function useNewSessionForm({
     recentDirs,
     // Handlers
     handleSkipPermissionsChange,
-    handleUseTmuxChange,
     handleSubmit,
     handleClose,
   };

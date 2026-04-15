@@ -15,8 +15,7 @@ export async function GET(
 
     // Look up session to get the tmux name
     const session = await queries.getSession(id);
-    const agentType = session?.agent_type || "claude";
-    const sessionName = session?.tmux_name || `${agentType}-${id}`;
+    const sessionName = session?.tmux_name || `claude-${id}`;
 
     // Capture visible pane content plus scrollback, take last 50 lines
     const { stdout } = await execAsync(

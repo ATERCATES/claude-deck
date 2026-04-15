@@ -16,8 +16,8 @@ import {
   getManagedSessionPattern,
   getSessionIdFromName,
   getProviderIdFromSessionName,
-} from "./providers/registry";
-import type { AgentType } from "./providers";
+  type AgentType,
+} from "./providers";
 import { broadcast } from "./claude/watcher";
 import { getDb } from "./db";
 import { getTunnelUrls } from "./tunnels";

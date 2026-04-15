@@ -48,11 +48,11 @@ export async function POST(request: Request, { params }: RouteParams) {
         return NextResponse.json({ success: sent });
 
       case "complete":
-        completeWorker(id);
+        await completeWorker(id);
         return NextResponse.json({ success: true });
 
       case "fail":
-        failWorker(id);
+        await failWorker(id);
         return NextResponse.json({ success: true });
 
       default:

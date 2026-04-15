@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exec, spawn } from "child_process";
 import { promisify } from "util";
-import { queries, getDb, type Session } from "@/lib/db";
+import { queries, type Session } from "@/lib/db";
 import { randomUUID } from "crypto";
 import { writeFileSync, unlinkSync, readFileSync, existsSync } from "fs";
 import { homedir } from "os";
@@ -262,23 +262,18 @@ export async function POST(
       const tmuxName = `${agentType}-${newId}`;
 
       // Create new session in DB (using cwd already fetched above)
-      getDb()
-        .prepare(
-          `INSERT INTO sessions (id, name, tmux_name, working_directory, parent_session_id, model, initial_prompt, agent_type, auto_approve, project_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          newId,
-          newName,
-          tmuxName,
-          cwd,
-          null,
-          session.model,
-          `Continue from previous session. Here's a summary of the work so far:\n\n${summary}`,
-          agentType,
-          session.auto_approve ? 1 : 0,
-          session.project_id || "uncategorized"
-        );
+      queries.createSession(
+        newId,
+        newName,
+        tmuxName,
+        cwd || cwdExpanded,
+        null,
+        session.model,
+        `Continue from previous session. Here's a summary of the work so far:\n\n${summary}`,
+        agentType,
+        session.auto_approve ?? false,
+        session.project_id || "uncategorized"
+      );
 
       newSession = (await queries.getSession(newId)) as Session;
       const newTmuxSession = tmuxName;

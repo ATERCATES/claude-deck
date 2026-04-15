@@ -62,16 +62,13 @@ The installer can automatically install these on macOS and Linux:
 - **git** - Version control
 - **tmux** - Terminal multiplexer for session management
 
-### AI Coding CLIs
+### Claude Code
 
-You need at least one AI coding CLI installed. The installer will prompt you to choose:
+ClaudeDeck requires Claude Code installed:
 
-| CLI         | Provider  | Install Command                            |
-| ----------- | --------- | ------------------------------------------ |
-| Claude Code | Anthropic | `npm install -g @anthropic-ai/claude-code` |
-| Codex       | OpenAI    | `npm install -g @openai/codex`             |
-| Aider       | Multi-LLM | `pip install aider-chat`                   |
-| Gemini CLI  | Google    | `npm install -g gemini-cli`                |
+```bash
+npm install -g @anthropic-ai/claude-code
+```
 
 ## Configuration
 

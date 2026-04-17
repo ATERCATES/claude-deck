@@ -48,13 +48,24 @@ const migrations: Migration[] = [
     id: 4,
     name: "drop_unused_session_columns",
     up: (db) => {
-      db.exec(`
-        ALTER TABLE sessions DROP COLUMN pr_url;
-        ALTER TABLE sessions DROP COLUMN pr_number;
-        ALTER TABLE sessions DROP COLUMN pr_status;
-        ALTER TABLE sessions DROP COLUMN listening_ports;
-        ALTER TABLE sessions DROP COLUMN group_path;
-      `);
+      const columns = db
+        .prepare("PRAGMA table_info(sessions)")
+        .all()
+        .map((r) => (r as { name: string }).name);
+
+      const toDrop = [
+        "pr_url",
+        "pr_number",
+        "pr_status",
+        "listening_ports",
+        "group_path",
+      ];
+
+      for (const col of toDrop) {
+        if (columns.includes(col)) {
+          db.exec(`ALTER TABLE sessions DROP COLUMN ${col};`);
+        }
+      }
     },
   },
 ];

@@ -44,6 +44,7 @@ claude-deck.db-shm
 
 # TypeScript
 *.tsbuildinfo
+next-env.d.ts
 
 # Vercel
 .vercel

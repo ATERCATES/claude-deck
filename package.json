@@ -1,6 +1,6 @@
 {
   "name": "@atercates/claude-deck",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "description": "Self-hosted web UI for managing Claude Code sessions",
   "bin": {
     "claude-deck": "./scripts/claude-deck"

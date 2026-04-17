@@ -27,15 +27,31 @@ function deriveDisplayName(directory: string | null, encoded: string): string {
   return parts[parts.length - 1] || decoded;
 }
 
-let projectsData: CachedProject[] | null = null;
-let projectsBuilding: Promise<CachedProject[]> | null = null;
-let invalidationTick = 0;
+// In a Next.js custom-server setup, this module is loaded twice: once by the
+// tsx-driven server.ts (where the file watcher lives) and once by the Next.js
+// runtime (where the API routes live). Each copy carries its own module
+// variables, so invalidations performed from the watcher never reach the
+// cache read by the API. Pin the shared state to globalThis so both copies
+// mutate the same object.
+interface CacheState {
+  projectsData: CachedProject[] | null;
+  projectsBuilding: Promise<CachedProject[]> | null;
+  invalidationTick: number;
+}
+
+const CACHE_KEY = Symbol.for("claudedeck.jsonl-cache.state");
+type GlobalWithCache = typeof globalThis & { [CACHE_KEY]?: CacheState };
+const globalScope = globalThis as GlobalWithCache;
+const state: CacheState =
+  globalScope[CACHE_KEY] ??
+  (globalScope[CACHE_KEY] = {
+    projectsData: null,
+    projectsBuilding: null,
+    invalidationTick: 0,
+  });
 
 async function buildProjects(): Promise<CachedProject[]> {
   const projectNames = getClaudeProjectNames();
-  console.log(
-    `[cache] buildProjects: readdir=${projectNames.length} names; test5 present=${projectNames.some((n) => n.includes("test5"))}`
-  );
 
   const allSessions = await sdkListSessions();
   const cwdToDir = new Map<string, string>();
@@ -113,36 +129,24 @@ async function buildProjects(): Promise<CachedProject[]> {
 const MAX_REBUILD_RETRIES = 5;
 
 export async function getCachedProjects(): Promise<CachedProject[]> {
-  if (projectsData) {
-    console.log(
-      `[cache] getCachedProjects: HIT (n=${projectsData.length}, tick=${invalidationTick})`
-    );
-    return projectsData;
-  }
-  if (projectsBuilding) {
-    console.log("[cache] getCachedProjects: awaiting in-flight build");
-    return projectsBuilding;
-  }
+  if (state.projectsData) return state.projectsData;
+  if (state.projectsBuilding) return state.projectsBuilding;
 
   for (let attempt = 0; attempt <= MAX_REBUILD_RETRIES; attempt++) {
-    const startTick = invalidationTick;
-    console.log(
-      `[cache] getCachedProjects: attempt=${attempt} startTick=${startTick}`
-    );
-    projectsBuilding = buildProjects();
+    const startTick = state.invalidationTick;
+    state.projectsBuilding = buildProjects();
     let result: CachedProject[];
     try {
-      result = await projectsBuilding;
+      result = await state.projectsBuilding;
     } finally {
-      projectsBuilding = null;
+      state.projectsBuilding = null;
     }
-    console.log(
-      `[cache] getCachedProjects: attempt=${attempt} result=${result.length} endTick=${invalidationTick}`
-    );
-    if (invalidationTick === startTick || attempt === MAX_REBUILD_RETRIES) {
-      projectsData = result;
-      console.log(`[cache] getCachedProjects: ACCEPT n=${projectsData.length}`);
-      return projectsData;
+    if (
+      state.invalidationTick === startTick ||
+      attempt === MAX_REBUILD_RETRIES
+    ) {
+      state.projectsData = result;
+      return state.projectsData;
     }
   }
   throw new Error("getCachedProjects: unreachable");
@@ -156,7 +160,7 @@ export async function getCachedSessions(
 }
 
 export function invalidateAllProjects(): void {
-  projectsData = null;
-  invalidationTick++;
+  state.projectsData = null;
+  state.invalidationTick++;
   invalidateRepoIdentityCache();
 }

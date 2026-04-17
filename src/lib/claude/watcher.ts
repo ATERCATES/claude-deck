@@ -63,7 +63,6 @@ export function startWatcher(): void {
     });
 
     projectsWatcher.on("change", (fp) => {
-      console.log("[watcher] change", fp);
       handleFileChange(fp);
       if (fp.endsWith(".jsonl")) {
         const sessionId = path.basename(fp, ".jsonl");
@@ -71,7 +70,6 @@ export function startWatcher(): void {
       }
     });
     projectsWatcher.on("add", (fp) => {
-      console.log("[watcher] add", fp);
       handleFileChange(fp);
       const relative = path.relative(CLAUDE_PROJECTS_DIR, fp);
       if (!relative.includes(path.sep)) {
@@ -79,16 +77,9 @@ export function startWatcher(): void {
         broadcast({ type: "projects-changed" });
       }
     });
-    projectsWatcher.on("addDir", (fp) => {
-      console.log("[watcher] addDir", fp);
+    projectsWatcher.on("addDir", () => {
       invalidateAllProjects();
       broadcast({ type: "projects-changed" });
-    });
-    projectsWatcher.on("ready", () => {
-      console.log("[watcher] ready");
-    });
-    projectsWatcher.on("error", (err) => {
-      console.error("[watcher] error", err);
     });
 
     console.log("> File watcher started on ~/.claude/projects/");

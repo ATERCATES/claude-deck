@@ -277,8 +277,25 @@ export interface RepoIdentity {
   isWorktree: boolean;
 }
 
-const repoIdentityCache = new Map<string, RepoIdentity | null>();
-const repoIdentityPending = new Map<string, Promise<RepoIdentity | null>>();
+// Shared across module instances (Next.js custom server vs app runtime) so
+// invalidations from the file watcher reach the cache read by buildProjects.
+interface RepoIdentityState {
+  cache: Map<string, RepoIdentity | null>;
+  pending: Map<string, Promise<RepoIdentity | null>>;
+}
+const REPO_IDENTITY_KEY = Symbol.for("claudedeck.repo-identity.state");
+type GlobalWithRepoIdentity = typeof globalThis & {
+  [REPO_IDENTITY_KEY]?: RepoIdentityState;
+};
+const repoIdentityGlobal = globalThis as GlobalWithRepoIdentity;
+const repoIdentityState: RepoIdentityState =
+  repoIdentityGlobal[REPO_IDENTITY_KEY] ??
+  (repoIdentityGlobal[REPO_IDENTITY_KEY] = {
+    cache: new Map(),
+    pending: new Map(),
+  });
+const repoIdentityCache = repoIdentityState.cache;
+const repoIdentityPending = repoIdentityState.pending;
 
 export async function resolveRepoIdentity(
   cwd: string

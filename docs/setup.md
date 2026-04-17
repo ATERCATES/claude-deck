@@ -39,11 +39,11 @@ Without `mouse on`, terminal scroll will not work. The setup script creates this
 
 ## Environment Variables
 
-| Variable   | Default               | Description                         |
-| ---------- | --------------------- | ----------------------------------- |
-| `PORT`     | `3011`                | Server port                         |
+| Variable   | Default                  | Description                         |
+| ---------- | ------------------------ | ----------------------------------- |
+| `PORT`     | `3011`                   | Server port                         |
 | `DB_PATH`  | `~/.claude-deck/data.db` | SQLite database path                |
-| `NODE_ENV` | `development`         | Set to `production` for prod builds |
+| `NODE_ENV` | `development`            | Set to `production` for prod builds |
 
 ## Docker
 
@@ -80,6 +80,10 @@ Or with the CLI:
 ./scripts/claude-deck logs
 ```
 
+## Reverse Proxy
+
+An example nginx HTTP config is at [`docs/examples/nginx-http.conf`](examples/nginx-http.conf). Copy it to `/etc/nginx/sites-available/`, set `server_name`, and enable the site. For HTTPS, add a certificate with certbot (`sudo certbot --nginx -d your.domain`).
+
 ## Mobile Access (PWA)
 
 1. Access `http://{server-ip}:3011` from your phone
@@ -94,9 +98,9 @@ allowedDevOrigins: ["192.168.1.x"],
 
 ## Data Directories
 
-| Path                  | Purpose                    | Managed By      |
-| --------------------- | -------------------------- | --------------- |
-| `~/.claude/projects/` | Claude session JSONL files | Claude Code CLI |
-| `~/.claude-deck/`        | ClaudeDeck data directory    | ClaudeDeck        |
-| `~/.claude-deck/data.db` | SQLite database            | ClaudeDeck        |
-| `~/.tmux.conf`        | tmux configuration         | setup.sh        |
+| Path                     | Purpose                    | Managed By      |
+| ------------------------ | -------------------------- | --------------- |
+| `~/.claude/projects/`    | Claude session JSONL files | Claude Code CLI |
+| `~/.claude-deck/`        | ClaudeDeck data directory  | ClaudeDeck      |
+| `~/.claude-deck/data.db` | SQLite database            | ClaudeDeck      |
+| `~/.tmux.conf`           | tmux configuration         | setup.sh        |

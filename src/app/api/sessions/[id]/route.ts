@@ -188,7 +188,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         const gitCommonDir = stdout.trim().replace(/\/.git$/, "");
 
         if (gitCommonDir) {
-          await deleteWorktree(worktreePath, gitCommonDir, false);
+          await deleteWorktree(worktreePath, gitCommonDir, true);
         }
       }, `cleanup-worktree-${id}`);
     }
@@ -214,7 +214,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
             const gitCommonDir = stdout.trim().replace(/\/.git$/, "");
 
             if (gitCommonDir) {
-              await deleteWorktree(worktreePath, gitCommonDir, false);
+              await deleteWorktree(worktreePath, gitCommonDir, true);
             }
           }, `cleanup-worker-worktree-${workerId}`);
         }

@@ -88,7 +88,9 @@ export async function getBranches(dirPath: string): Promise<string[]> {
 }
 
 /**
- * Check if a branch exists
+ * Check if a local branch exists. Uses `show-ref --verify refs/heads/<name>`
+ * so tags, remotes, or other refs with the same short name do not produce
+ * false positives.
  */
 export async function branchExists(
   dirPath: string,
@@ -97,7 +99,7 @@ export async function branchExists(
   const resolvedPath = dirPath.replace(/^~/, process.env.HOME || "");
   try {
     await execAsync(
-      `git -C "${resolvedPath}" rev-parse --verify "${branchName}"`,
+      `git -C "${resolvedPath}" show-ref --verify --quiet "refs/heads/${branchName}"`,
       { timeout: 5000 }
     );
     return true;

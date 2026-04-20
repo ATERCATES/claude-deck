@@ -60,6 +60,35 @@ function generateWorktreeDirName(
   return `${projectName}-${featureSlug}`;
 }
 
+const MAX_NAME_SUFFIX = 50;
+
+/**
+ * Find a branch name and worktree path that are both free.
+ * Appends -2, -3, ... until a free pair is found (or gives up).
+ */
+async function resolveFreeNames(
+  resolvedProjectPath: string,
+  baseBranchName: string,
+  baseWorktreePath: string
+): Promise<{ branchName: string; worktreePath: string }> {
+  for (let i = 1; i <= MAX_NAME_SUFFIX; i++) {
+    const suffix = i === 1 ? "" : `-${i}`;
+    const candidateBranch = `${baseBranchName}${suffix}`;
+    const candidatePath = `${baseWorktreePath}${suffix}`;
+    const branchTaken = await branchExists(
+      resolvedProjectPath,
+      candidateBranch
+    );
+    const pathTaken = fs.existsSync(candidatePath);
+    if (!branchTaken && !pathTaken) {
+      return { branchName: candidateBranch, worktreePath: candidatePath };
+    }
+  }
+  throw new Error(
+    `Could not find a free branch/path after ${MAX_NAME_SUFFIX} attempts starting from ${baseBranchName}`
+  );
+}
+
 /**
  * Create a new worktree for a feature branch
  */
@@ -75,61 +104,51 @@ export async function createWorktree(
     throw new Error(`Not a git repository: ${projectPath}`);
   }
 
-  // Generate branch name
-  const branchName = generateBranchName(featureName);
-
-  // Check if branch already exists
-  if (await branchExists(resolvedProjectPath, branchName)) {
-    throw new Error(`Branch already exists: ${branchName}`);
-  }
-
-  // Generate worktree path
   const projectName = getRepoName(resolvedProjectPath);
-  const worktreeDirName = generateWorktreeDirName(projectName, featureName);
-  const worktreePath = path.join(WORKTREES_DIR, worktreeDirName);
+  const baseBranchName = generateBranchName(featureName);
+  const baseWorktreePath = path.join(
+    WORKTREES_DIR,
+    generateWorktreeDirName(projectName, featureName)
+  );
 
-  // Check if worktree path already exists
-  if (fs.existsSync(worktreePath)) {
-    throw new Error(`Worktree path already exists: ${worktreePath}`);
-  }
+  // Resolve to a branch name and path that don't collide with existing refs
+  // (orphan branches from prior worktree deletions, parallel creations, etc.)
+  const { branchName, worktreePath } = await resolveFreeNames(
+    resolvedProjectPath,
+    baseBranchName,
+    baseWorktreePath
+  );
 
   // Ensure worktrees directory exists
   await ensureWorktreesDir();
 
-  // Create the worktree with a new branch
-  // Try multiple ref formats to avoid "ambiguous refname" errors
+  // Try multiple ref formats to tolerate "ambiguous refname" when the base
+  // exists both locally and on a remote.
   const refFormats = [
-    `origin/${baseBranch}`, // Try remote first (most explicit)
-    `refs/heads/${baseBranch}`, // Then local branch
-    baseBranch, // Finally, bare name as fallback
+    `origin/${baseBranch}`,
+    `refs/heads/${baseBranch}`,
+    baseBranch,
   ];
 
   let lastError: Error | null = null;
+  let created = false;
   for (const ref of refFormats) {
     try {
       await execAsync(
         `git -C "${resolvedProjectPath}" worktree add -b "${branchName}" "${worktreePath}" "${ref}"`,
         { timeout: 30000 }
       );
-      lastError = null;
-
-      // Init submodules if present
-      if (fs.existsSync(path.join(worktreePath, ".gitmodules"))) {
-        await execAsync(
-          `git -C "${worktreePath}" submodule update --init --recursive`,
-          { timeout: 120000 }
-        );
-      }
-
-      break; // Success!
+      created = true;
+      break;
     } catch (error: unknown) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      // Continue to next ref format
     }
   }
 
-  if (lastError) {
-    throw new Error(`Failed to create worktree: ${lastError.message}`);
+  if (!created) {
+    throw new Error(
+      `Failed to create worktree: ${lastError?.message ?? "unknown error"}`
+    );
   }
 
   return {
@@ -147,7 +166,7 @@ export async function createWorktree(
 export async function deleteWorktree(
   worktreePath: string,
   projectPath: string,
-  deleteBranch = false
+  deleteBranch = true
 ): Promise<void> {
   const resolvedProjectPath = resolvePath(projectPath);
   const resolvedWorktreePath = resolvePath(worktreePath);

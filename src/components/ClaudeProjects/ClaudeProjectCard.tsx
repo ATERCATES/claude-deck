@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -13,6 +14,7 @@ import {
   Loader2,
   Copy,
   ExternalLink,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +26,7 @@ import {
 } from "@/components/ui/context-menu";
 import { TruncatedText } from "@/components/ui/truncated-text";
 import { ClaudeSessionCard } from "./ClaudeSessionCard";
+import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
 import {
   useClaudeSessionsQuery,
   useHideItem,
@@ -63,6 +66,7 @@ export function ClaudeProjectCard({
   const unhideItem = useUnhideItem();
   const { data: editors } = useExternalEditors();
   const openInEditor = useOpenInEditor();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const sessions = sessionsData?.sessions || [];
   const filteredSessions = showHidden
@@ -120,6 +124,14 @@ export function ClaudeProjectCard({
           <ContextMenuItem onClick={handleCopyPath}>
             <Copy className="mr-2 h-3 w-3" />
             Copiar path
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            onClick={() => setShowDeleteDialog(true)}
+            className="text-red-600 focus:text-red-600"
+          >
+            <Trash2 className="mr-2 h-3 w-3" />
+            Eliminar worktree…
           </ContextMenuItem>
           <ContextMenuSeparator />
         </>
@@ -303,6 +315,14 @@ export function ClaudeProjectCard({
             </>
           )}
         </div>
+      )}
+
+      {showDeleteDialog && (
+        <DeleteWorktreeDialog
+          open={showDeleteDialog}
+          onOpenChange={setShowDeleteDialog}
+          worktree={project}
+        />
       )}
     </div>
   );

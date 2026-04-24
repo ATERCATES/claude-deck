@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ClaudeSessionCard } from "./ClaudeSessionCard";
 import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
+import { DeleteProjectDialog } from "./DeleteProjectDialog";
 import { RenameWorktreeDialog } from "./RenameWorktreeDialog";
 import {
   useClaudeSessionsQuery,
@@ -88,6 +89,7 @@ export function ClaudeProjectCard({
   const openInEditor = useOpenInEditor();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
+  const [showDeleteProjectDialog, setShowDeleteProjectDialog] = useState(false);
 
   const summary =
     project.isWorktree && project.directory
@@ -176,6 +178,18 @@ export function ClaudeProjectCard({
           <EyeOff className="mr-2 h-3 w-3" />
           Hide project
         </ContextMenuItem>
+      )}
+      {!project.isWorktree && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            onClick={() => setShowDeleteProjectDialog(true)}
+            className="text-red-600 focus:text-red-600"
+          >
+            <Trash2 className="mr-2 h-3 w-3" />
+            Eliminar proyecto…
+          </ContextMenuItem>
+        </>
       )}
     </>
   );
@@ -417,6 +431,14 @@ export function ClaudeProjectCard({
           open={showRenameDialog}
           onOpenChange={setShowRenameDialog}
           worktree={project}
+        />
+      )}
+      {showDeleteProjectDialog && (
+        <DeleteProjectDialog
+          open={showDeleteProjectDialog}
+          onOpenChange={setShowDeleteProjectDialog}
+          project={project}
+          worktreeChildren={worktreeChildren}
         />
       )}
     </div>

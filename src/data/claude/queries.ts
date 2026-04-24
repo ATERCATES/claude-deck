@@ -256,6 +256,34 @@ export function useWorktreeStatuses(paths: string[]) {
   });
 }
 
+export function useDeleteProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      projectName,
+      includeWorktrees,
+    }: {
+      projectName: string;
+      includeWorktrees: boolean;
+    }) => {
+      const res = await fetch("/api/claude/projects", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectName, includeWorktrees }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to delete project");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: claudeKeys.projects() });
+      queryClient.invalidateQueries({ queryKey: claudeKeys.all });
+    },
+  });
+}
+
 export function useRenameWorktree() {
   const queryClient = useQueryClient();
   return useMutation({

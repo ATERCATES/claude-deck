@@ -10,6 +10,7 @@ export {
   useDeleteWorktree,
   useWorktreeStatuses,
   useRenameWorktree,
+  useDeleteProject,
 } from "./queries";
 export type {
   ClaudeProject,

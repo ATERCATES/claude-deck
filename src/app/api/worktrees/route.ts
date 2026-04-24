@@ -7,18 +7,28 @@ import {
   deleteWorktree,
   renameWorktreeBranch,
 } from "@/lib/worktrees";
-import { invalidateAllProjects } from "@/lib/claude/jsonl-cache";
+import {
+  getCachedProjects,
+  invalidateAllProjects,
+} from "@/lib/claude/jsonl-cache";
 import { queries } from "@/lib/db";
 
 async function removeClaudeProjectArtifacts(
   worktreePath: string
 ): Promise<void> {
-  const encoded = worktreePath.replace(/\//g, "-");
+  // Look up the canonical Claude project dir via the cache instead of
+  // re-deriving the encoding ourselves — Claude Code encodes both `/` and `.`
+  // as `-`, and the exact scheme is an implementation detail we should not
+  // mirror by hand.
+  const projects = await getCachedProjects();
+  const match = projects.find((p) => p.directory === worktreePath);
+  if (!match) return;
+
   const claudeProjectDir = path.join(
     os.homedir(),
     ".claude",
     "projects",
-    encoded
+    match.name
   );
   try {
     await fs.promises.rm(claudeProjectDir, { recursive: true, force: true });
@@ -26,7 +36,7 @@ async function removeClaudeProjectArtifacts(
     // ignore
   }
   try {
-    await queries.unhideItem("project", encoded);
+    await queries.unhideItem("project", match.name);
   } catch {
     // ignore
   }

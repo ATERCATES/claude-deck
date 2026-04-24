@@ -228,6 +228,33 @@ export async function deleteWorktree(
 }
 
 /**
+ * Rename the worktree's local branch via `git branch -m`.
+ * Leaves the worktree directory in place; only the branch name changes.
+ */
+export async function renameWorktreeBranch(
+  worktreePath: string,
+  projectPath: string,
+  newBranchName: string
+): Promise<void> {
+  const resolvedWT = resolvePath(worktreePath);
+  const resolvedProject = resolvePath(projectPath);
+
+  const { stdout } = await execAsync(
+    `git -C "${resolvedWT}" rev-parse --abbrev-ref HEAD`,
+    { timeout: 5000 }
+  );
+  const oldBranch = stdout.trim();
+  if (!oldBranch || oldBranch === "HEAD") {
+    throw new Error("Worktree is in a detached HEAD state");
+  }
+
+  await execAsync(
+    `git -C "${resolvedProject}" branch -m "${oldBranch}" "${newBranchName}"`,
+    { timeout: 10000 }
+  );
+}
+
+/**
  * List all worktrees for a project
  */
 export async function listWorktrees(projectPath: string): Promise<

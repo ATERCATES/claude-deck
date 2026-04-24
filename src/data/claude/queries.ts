@@ -219,3 +219,69 @@ export function useDeleteWorktree() {
     },
   });
 }
+
+export interface WorktreeSummary {
+  path: string;
+  dirty: boolean;
+  ahead: number;
+  behind: number;
+  branchName: string;
+  lastCommitSubject: string;
+  lastCommitRelative: string;
+  createdAt: number;
+  activeSessions: number;
+}
+
+async function fetchWorktreeStatuses(
+  paths: string[]
+): Promise<WorktreeSummary[]> {
+  const res = await fetch("/api/worktrees/statuses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paths }),
+  });
+  if (!res.ok) throw new Error("Failed to fetch statuses");
+  return res.json();
+}
+
+export function useWorktreeStatuses(paths: string[]) {
+  return useQuery({
+    queryKey: ["worktree-statuses", paths],
+    queryFn: () => fetchWorktreeStatuses(paths),
+    enabled: paths.length > 0,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+}
+
+export function useRenameWorktree() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      worktreePath,
+      projectPath,
+      newBranchName,
+    }: {
+      worktreePath: string;
+      projectPath: string;
+      newBranchName: string;
+    }) => {
+      const res = await fetch("/api/worktrees", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ worktreePath, projectPath, newBranchName }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to rename");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: claudeKeys.projects() });
+      queryClient.invalidateQueries({ queryKey: claudeKeys.all });
+    },
+  });
+}

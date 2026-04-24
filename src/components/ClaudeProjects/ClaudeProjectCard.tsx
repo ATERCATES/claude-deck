@@ -284,12 +284,14 @@ export function ClaudeProjectCard({
     ) : null;
 
   const triggerRow = tooltipContent ? (
-    <Tooltip>
-      <TooltipTrigger asChild>{masterRow}</TooltipTrigger>
-      <TooltipContent side="right" className="max-w-[300px]">
-        {tooltipContent}
-      </TooltipContent>
-    </Tooltip>
+    <div>
+      <Tooltip>
+        <TooltipTrigger asChild>{masterRow}</TooltipTrigger>
+        <TooltipContent side="right" className="max-w-[300px]">
+          {tooltipContent}
+        </TooltipContent>
+      </Tooltip>
+    </div>
   ) : (
     masterRow
   );

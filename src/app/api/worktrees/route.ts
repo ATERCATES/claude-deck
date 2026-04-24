@@ -1,10 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import {
   createWorktree,
   deleteWorktree,
   renameWorktreeBranch,
 } from "@/lib/worktrees";
 import { invalidateAllProjects } from "@/lib/claude/jsonl-cache";
+import { queries } from "@/lib/db";
+
+async function removeClaudeProjectArtifacts(
+  worktreePath: string
+): Promise<void> {
+  const encoded = worktreePath.replace(/\//g, "-");
+  const claudeProjectDir = path.join(
+    os.homedir(),
+    ".claude",
+    "projects",
+    encoded
+  );
+  try {
+    await fs.promises.rm(claudeProjectDir, { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+  try {
+    await queries.unhideItem("project", encoded);
+  } catch {
+    // ignore
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,6 +69,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
     await deleteWorktree(worktreePath, projectPath, Boolean(deleteBranch));
+    await removeClaudeProjectArtifacts(worktreePath);
     invalidateAllProjects();
     return NextResponse.json({ ok: true });
   } catch (error) {

@@ -31,6 +31,13 @@ log_error()   { echo -e "${RED}==>${NC} $1"; }
 INSTALL_DIR="$HOME/.claude-deck"
 REPO_URL="https://github.com/ATERCATES/claude-deck.git"
 NODE_MIN=24
+OS_NAME="$(uname -s)"
+IS_MAC=false
+if [[ "$OS_NAME" == "Darwin" ]]; then
+  IS_MAC=true
+fi
+LAUNCHD_LABEL="com.claudedeck"
+LAUNCHD_PLIST="$HOME/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
 
 # ─── Parse flags ──────────────────────────────────────────────────────────────
 
@@ -99,6 +106,14 @@ app_version() {
   node -e "console.log(require('$INSTALL_DIR/package.json').version)" 2>/dev/null || echo "unknown"
 }
 
+launchd_domain() {
+  if launchctl print "gui/$UID" > /dev/null 2>&1; then
+    echo "gui/$UID"
+  else
+    echo "user/$UID"
+  fi
+}
+
 # ─── Update ───────────────────────────────────────────────────────────────────
 
 if [[ "$FLAG_UPDATE" == true ]]; then
@@ -135,13 +150,27 @@ if [[ "$FLAG_UPDATE" == true ]]; then
   rm -f .next/build.lock
   pnpm build 2>&1 | tail -5
 
-  if systemctl is-active --quiet claudedeck 2>/dev/null; then
-    log_info "Restarting service..."
-    sudo systemctl restart claudedeck
-    sleep 2
-    systemctl is-active --quiet claudedeck && log_success "ClaudeDeck $NEW running" || log_error "Failed. Check: sudo journalctl -u claudedeck -f"
+  if [[ "$IS_MAC" == true ]]; then
+    LAUNCHD_DOMAIN="$(launchd_domain)"
+    if [[ -f "$LAUNCHD_PLIST" ]] && launchctl print "$LAUNCHD_DOMAIN/$LAUNCHD_LABEL" > /dev/null 2>&1; then
+      log_info "Restarting launchd service..."
+      launchctl bootout "$LAUNCHD_DOMAIN/$LAUNCHD_LABEL" > /dev/null 2>&1 || true
+      launchctl bootstrap "$LAUNCHD_DOMAIN" "$LAUNCHD_PLIST"
+      launchctl kickstart -k "$LAUNCHD_DOMAIN/$LAUNCHD_LABEL" > /dev/null 2>&1 || true
+      sleep 2
+      launchctl print "$LAUNCHD_DOMAIN/$LAUNCHD_LABEL" > /dev/null 2>&1 && log_success "ClaudeDeck $NEW running" || log_error "Failed. Check: $INSTALL_DIR/logs/launchd.err.log"
+    else
+      log_success "ClaudeDeck $NEW ready. Start with: launchctl bootstrap $LAUNCHD_DOMAIN $LAUNCHD_PLIST"
+    fi
   else
-    log_success "ClaudeDeck $NEW ready. Start with: sudo systemctl start claudedeck"
+    if systemctl is-active --quiet claudedeck 2>/dev/null; then
+      log_info "Restarting service..."
+      sudo systemctl restart claudedeck
+      sleep 2
+      systemctl is-active --quiet claudedeck && log_success "ClaudeDeck $NEW running" || log_error "Failed. Check: sudo journalctl -u claudedeck -f"
+    else
+      log_success "ClaudeDeck $NEW ready. Start with: sudo systemctl start claudedeck"
+    fi
   fi
 
   echo ""
@@ -159,7 +188,11 @@ echo ""
 log_info "Checking prerequisites..."
 
 if ! command -v git &> /dev/null; then
-  log_error "git is required. Install it with: sudo apt install git"
+  if [[ "$IS_MAC" == true ]]; then
+    log_error "git is required. Install it with: xcode-select --install (or brew install git)"
+  else
+    log_error "git is required. Install it with: sudo apt install git"
+  fi
   exit 1
 fi
 
@@ -167,7 +200,16 @@ if ! command -v tmux &> /dev/null; then
   log_warn "tmux is not installed (required for session management)"
   ask "Install tmux now? (y/n)" "y" INSTALL_TMUX
   if [[ "$INSTALL_TMUX" == "y" ]]; then
-    sudo apt install -y tmux
+    if [[ "$IS_MAC" == true ]]; then
+      if command -v brew &> /dev/null; then
+        brew install tmux
+      else
+        log_error "Homebrew is required to auto-install tmux on macOS. Install Homebrew, then run: brew install tmux"
+        exit 1
+      fi
+    else
+      sudo apt install -y tmux
+    fi
     log_success "tmux installed"
   else
     log_error "tmux is required. Install it manually and re-run."
@@ -237,12 +279,71 @@ if [[ ! -f "$HOME/.tmux.conf" ]] || ! grep -q "mouse on" "$HOME/.tmux.conf" 2>/d
   echo "set -g mouse on" >> "$HOME/.tmux.conf"
 fi
 
-# ─── Systemd ──────────────────────────────────────────────────────────────────
+# ─── Service setup ────────────────────────────────────────────────────────────
 
 NODE_BIN=$(which node)
 TSX_BIN="$INSTALL_DIR/node_modules/.bin/tsx"
 
-SERVICE="[Unit]
+INSTALL_SERVICE=false
+if [[ -t 0 ]] && [[ "$FLAG_NONINTERACTIVE" == false ]]; then
+  echo ""
+  if [[ "$IS_MAC" == true ]]; then
+    ask "Install as launchd service? (y/n)" "y" SVC_ANSWER
+  else
+    ask "Install as systemd service? (y/n)" "y" SVC_ANSWER
+  fi
+  [[ "$SVC_ANSWER" == "y" ]] && INSTALL_SERVICE=true
+else
+  INSTALL_SERVICE=true
+fi
+
+if [[ "$INSTALL_SERVICE" == true ]]; then
+  if [[ "$IS_MAC" == true ]]; then
+    LAUNCHD_DOMAIN="$(launchd_domain)"
+    log_info "Installing launchd service..."
+    mkdir -p "$HOME/Library/LaunchAgents" "$INSTALL_DIR/logs"
+
+    cat > "$LAUNCHD_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$LAUNCHD_LABEL</string>
+  <key>WorkingDirectory</key>
+  <string>$INSTALL_DIR</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$TSX_BIN</string>
+    <string>--env-file=.env</string>
+    <string>server.ts</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>PATH</key>
+    <string>$(dirname "$NODE_BIN"):$INSTALL_DIR/node_modules/.bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>$INSTALL_DIR/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>$INSTALL_DIR/logs/launchd.err.log</string>
+</dict>
+</plist>
+EOF
+
+    launchctl bootout "$LAUNCHD_DOMAIN/$LAUNCHD_LABEL" > /dev/null 2>&1 || true
+    launchctl bootstrap "$LAUNCHD_DOMAIN" "$LAUNCHD_PLIST"
+    launchctl kickstart -k "$LAUNCHD_DOMAIN/$LAUNCHD_LABEL" > /dev/null 2>&1 || true
+    sleep 2
+    launchctl print "$LAUNCHD_DOMAIN/$LAUNCHD_LABEL" > /dev/null 2>&1 && log_success "Service running on port $PORT" || log_error "Failed. Check: $INSTALL_DIR/logs/launchd.err.log"
+  else
+    SERVICE="[Unit]
 Description=ClaudeDeck
 After=network.target
 
@@ -259,23 +360,14 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target"
 
-INSTALL_SERVICE=false
-if [[ -t 0 ]] && [[ "$FLAG_NONINTERACTIVE" == false ]]; then
-  echo ""
-  ask "Install as systemd service? (y/n)" "y" SVC_ANSWER
-  [[ "$SVC_ANSWER" == "y" ]] && INSTALL_SERVICE=true
-else
-  INSTALL_SERVICE=true
-fi
-
-if [[ "$INSTALL_SERVICE" == true ]]; then
-  log_info "Installing systemd service..."
-  echo "$SERVICE" | sudo tee /etc/systemd/system/claudedeck.service > /dev/null
-  sudo systemctl daemon-reload
-  sudo systemctl enable claudedeck > /dev/null 2>&1
-  sudo systemctl restart claudedeck
-  sleep 2
-  systemctl is-active --quiet claudedeck && log_success "Service running on port $PORT" || log_error "Failed. Check: sudo journalctl -u claudedeck -f"
+    log_info "Installing systemd service..."
+    echo "$SERVICE" | sudo tee /etc/systemd/system/claudedeck.service > /dev/null
+    sudo systemctl daemon-reload
+    sudo systemctl enable claudedeck > /dev/null 2>&1
+    sudo systemctl restart claudedeck
+    sleep 2
+    systemctl is-active --quiet claudedeck && log_success "Service running on port $PORT" || log_error "Failed. Check: sudo journalctl -u claudedeck -f"
+  fi
 fi
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
@@ -289,6 +381,12 @@ echo -e "  ${BOLD}Local:${NC}    http://localhost:$PORT"
 [[ -n "$SSH_HOST" ]] && echo -e "  ${BOLD}Remote:${NC}   Configure your reverse proxy to point to port $PORT"
 echo ""
 echo -e "  ${DIM}First visit will prompt you to create an account.${NC}"
-echo -e "  ${DIM}Manage:  sudo systemctl {start|stop|restart|status} claudedeck${NC}"
+if [[ "$IS_MAC" == true ]]; then
+  LAUNCHD_DOMAIN="$(launchd_domain)"
+  echo -e "  ${DIM}Status:  launchctl print $LAUNCHD_DOMAIN/$LAUNCHD_LABEL${NC}"
+  echo -e "  ${DIM}Restart: launchctl kickstart -k $LAUNCHD_DOMAIN/$LAUNCHD_LABEL${NC}"
+else
+  echo -e "  ${DIM}Manage:  sudo systemctl {start|stop|restart|status} claudedeck${NC}"
+fi
 echo -e "  ${DIM}Update:  ~/.claude-deck/scripts/install.sh --update${NC}"
 echo ""
